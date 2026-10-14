@@ -1,6 +1,8 @@
 //! One entry point for the UI: `App::call(cmd, args) -> JSON`. The Tauri shell exposes it as the `api` command,
 //! `server-hub bridge` exposes it over HTTP (POST /api/<cmd>) so the same UI runs in a browser.
+use crate::guard::{self, Alert, Guard};
 use crate::health;
+use crate::license;
 use crate::mem;
 use crate::procs::{self, Listener, Proc};
 use crate::scan::{self, Custom, Entry};
@@ -35,6 +37,34 @@ pub struct App {
     shares: Shares,
     /// pid → who started it (Terminal, Claude Code…), remembered while the parent is still alive so orphans keep a name
     starters: Mutex<HashMap<i32, String>>,
+    guard_file: PathBuf,
+    guard_cfg: Mutex<GuardCfg>,
+    guard: Mutex<Guard>,
+    /// What Guard did lately (auto-quit orphans, warnings), newest first.
+    guard_log: Mutex<VecDeque<Value>>,
+    /// Pro or not, re-read at most once a minute (the Keychain is a `security` call).
+    pro_cache: Mutex<(Option<Instant>, bool)>,
+    /// App to select when the window opens from a Guard notification (taken once by `memory`).
+    focus: Mutex<Option<String>>,
+}
+
+/// Guard settings, saved in guard.json. Guard is on by default (it only runs with Pro / trial); auto-quit is opt-in.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GuardCfg {
+    pub on: bool,
+    pub auto_orphans: bool,
+    pub orphan_mins: u64,
+}
+
+impl Default for GuardCfg {
+    fn default() -> Self {
+        GuardCfg { on: true, auto_orphans: false, orphan_mins: 30 }
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -137,7 +167,23 @@ impl App {
             None if saved.is_empty() => vec![default_root()],
             None => saved,
         };
-        App { roots: Mutex::new(roots), custom_file: dir.join("custom.json"), settings_file, entries: Mutex::new((None, vec![])), runs: Arc::new(Mutex::new(HashMap::new())), shares: Shares::default(), starters: Mutex::new(HashMap::new()) }
+        let guard_file = dir.join("guard.json");
+        let cfg: GuardCfg = std::fs::read_to_string(&guard_file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        App {
+            roots: Mutex::new(roots),
+            custom_file: dir.join("custom.json"),
+            settings_file,
+            entries: Mutex::new((None, vec![])),
+            runs: Arc::new(Mutex::new(HashMap::new())),
+            shares: Shares::default(),
+            starters: Mutex::new(HashMap::new()),
+            guard_file,
+            guard_cfg: Mutex::new(cfg),
+            guard: Mutex::new(Guard::default()),
+            guard_log: Mutex::new(VecDeque::new()),
+            pro_cache: Mutex::new((None, false)),
+            focus: Mutex::new(None),
+        }
     }
 
     pub fn roots(&self) -> Vec<PathBuf> {
@@ -206,8 +252,17 @@ impl App {
             "removeRoot" => self.remove_root(arg(args, "path")?),
             "share" => self.share(port_arg(args)?),
             "unshare" => Ok(json!({ "ok": self.shares.stop(port_arg(args)?) })),
-            "memory" => Ok(self.memory()),
+            "memory" => {
+                let mut m = self.memory();
+                m["focus"] = json!(self.focus.lock().unwrap().take());
+                Ok(m)
+            }
             "quit" => self.quit(args),
+            "icon" => Ok(json!({ "url": mem::icon(arg(args, "id")?) })),
+            "guard" => Ok(self.guard_status()),
+            "guardSet" => self.guard_set(args),
+            "licenseActivate" => license::activate(arg(args, "key")?).map(|_| self.license_changed()),
+            "licenseDeactivate" => license::deactivate().map(|_| self.license_changed()),
             _ => Err(format!("unknown command `{cmd}`")),
         }
     }
@@ -365,17 +420,148 @@ impl App {
 
     /// Memory tab: RAM used/total, pressure, and every process grouped by app (system ones flagged, never quittable).
     fn memory(&self) -> Value {
+        // screenshots / README: a fixed sample instead of this Mac's real apps
+        if let Some(v) = std::env::var("SERVER_HUB_DEMO_MEMORY").ok().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()) {
+            return v;
+        }
         let t = mem::table();
         let uid = unsafe { libc::getuid() };
         let ports: HashMap<i32, std::collections::BTreeSet<u16>> = procs::listeners().into_iter().map(|l| (l.pid, l.ports)).collect();
         let left = self.starters.lock().unwrap().clone();
         let groups = mem::group(&t, uid, &ports, &protected(&t), &left);
+        let leaking = self.guard.lock().unwrap().leaking.clone();
+        let rows: Vec<Value> = groups
+            .iter()
+            .map(|g| {
+                let mut v = mem::to_json(g);
+                v["leakMbH"] = json!(leaking.get(&g.id));
+                v
+            })
+            .collect();
         json!({
             "total": mem::total_bytes(),
             "used": mem::used_bytes(),
             "pressure": mem::pressure(),
-            "groups": groups.iter().map(mem::to_json).collect::<Vec<_>>(),
+            "groups": rows,
         })
+    }
+
+    /// The window opens on this app (a Guard notification was clicked).
+    pub fn set_focus(&self, id: &str) {
+        *self.focus.lock().unwrap() = Some(id.to_string());
+    }
+
+    fn pro(&self) -> bool {
+        let mut c = self.pro_cache.lock().unwrap();
+        if c.0.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
+            *c = (Some(Instant::now()), license::pro());
+        }
+        c.1
+    }
+
+    fn license_changed(&self) -> Value {
+        *self.pro_cache.lock().unwrap() = (None, false);
+        self.guard_status()
+    }
+
+    /// `{ license: {state, daysLeft, key}, on, autoOrphans, orphanMins, running, log }` — `running` = Guard is watching now.
+    fn guard_status(&self) -> Value {
+        let cfg = self.guard_cfg.lock().unwrap().clone();
+        let lic = license::current();
+        let running = cfg.on && lic.state != "expired";
+        let log: Vec<Value> = self.guard_log.lock().unwrap().iter().cloned().collect();
+        json!({ "license": lic, "on": cfg.on, "autoOrphans": cfg.auto_orphans, "orphanMins": cfg.orphan_mins, "running": running, "log": log })
+    }
+
+    /// `{ on?, autoOrphans?, orphanMins? }` → saved to guard.json.
+    fn guard_set(&self, a: &Value) -> Result<Value, String> {
+        {
+            let mut c = self.guard_cfg.lock().unwrap();
+            if let Some(v) = a["on"].as_bool() {
+                c.on = v;
+            }
+            if let Some(v) = a["autoOrphans"].as_bool() {
+                c.auto_orphans = v;
+            }
+            if let Some(v) = a["orphanMins"].as_u64() {
+                c.orphan_mins = v.clamp(5, 24 * 60);
+            }
+            if let Some(d) = self.guard_file.parent() {
+                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&self.guard_file, serde_json::to_string(&*c).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        }
+        Ok(self.guard_status())
+    }
+
+    fn log_guard(&self, what: &str, name: &str, mb: u64) {
+        let mut l = self.guard_log.lock().unwrap();
+        l.push_front(json!({ "t": unix_now(), "what": what, "name": name, "mb": mb }));
+        l.truncate(50);
+    }
+
+    /// Called by the desktop shell every few seconds (`minute` = once a minute): pressure warning, leaks, and — when
+    /// enabled — quits orphans older than `orphanMins`. Returns what to tell the user. Does nothing without Pro / trial.
+    pub fn guard_check(&self, minute: bool) -> Vec<Alert> {
+        let cfg = self.guard_cfg.lock().unwrap().clone();
+        if !cfg.on || !self.pro() {
+            return vec![];
+        }
+        let m = self.memory();
+        let groups = m["groups"].as_array().cloned().unwrap_or_default();
+        let rows: Vec<guard::Row> = groups
+            .iter()
+            .map(|g| guard::Row {
+                id: g["id"].as_str().unwrap_or(""),
+                name: g["name"].as_str().unwrap_or(""),
+                mb: g["mb"].as_u64().unwrap_or(0),
+                quittable: !g["system"].as_bool().unwrap_or(true),
+                orphan: g["orphan"].as_bool().unwrap_or(false),
+            })
+            .collect();
+        let now = unix_now();
+        let mut out = vec![];
+        let mut g = self.guard.lock().unwrap();
+        if let Some(a) = g.pressure(now, m["pressure"].as_str().unwrap_or("normal"), &rows) {
+            if let Alert::Pressure { name, mb, .. } = &a {
+                self.log_guard("warned", name, *mb);
+            }
+            out.push(a);
+        }
+        if minute {
+            for a in g.tick(now, &rows) {
+                if let Alert::Leak { name, mb, .. } = &a {
+                    self.log_guard("leaking", name, *mb);
+                }
+                out.push(a);
+            }
+            let stale = g.stale_orphans(now, &rows, cfg.orphan_mins * 60);
+            drop(g);
+            if cfg.auto_orphans {
+                for id in stale {
+                    if let Some(row) = groups.iter().find(|x| x["id"] == id.as_str()) {
+                        let _ = self.quit(&json!({ "pids": row["pids"], "force": false }));
+                        self.log_guard("quit", row["name"].as_str().unwrap_or("?"), row["mb"].as_u64().unwrap_or(0));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Pids of a memory group (to quit it from a notification).
+    pub fn group_pids(&self, id: &str) -> Vec<i64> {
+        self.memory()["groups"]
+            .as_array()
+            .and_then(|a| a.iter().find(|g| g["id"] == id))
+            .and_then(|g| g["pids"].as_array())
+            .map(|p| p.iter().filter_map(|x| x.as_i64()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Public wrapper for the menu bar's Quit items.
+    pub fn quit_group(&self, id: &str) -> Result<Value, String> {
+        self.quit(&json!({ "pids": self.group_pids(id), "force": false }))
     }
 
     /// `{ pids: [..], force }` — SIGTERM (apps quit cleanly) or SIGKILL. Checked again here: only your own,

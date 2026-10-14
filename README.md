@@ -4,7 +4,7 @@
 
 <p align="center"><b>Find what is eating your Mac's memory — and quit it in one click.</b><br>
 Plus every localhost server and whether it works. Free and open source (MIT) for macOS · Apple silicon & Intel ·
-signed & notarized by Apple · no account · nothing leaves your Mac</p>
+signed & notarized by Apple · no account · nothing leaves your Mac · optional <a href="#pro--guard">Pro</a> ($9.99 once)</p>
 
 <p align="center">
   <a href="https://github.com/nvminhtu/ram-rescue/releases/latest/download/RAM-Rescue-mac.dmg"><b>⬇ Download for Mac</b></a> ·
@@ -13,15 +13,18 @@ signed & notarized by Apple · no account · nothing leaves your Mac</p>
   <a href="https://github.com/nvminhtu/ram-rescue/releases">Releases</a>
 </p>
 
-Mac slow, fans loud, "memory pressure" in the yellow? RAM Rescue opens on the **Memory** tab: the apps using the most RAM
-are big cards at the top (Chrome with its 45 helpers counted as one app), each with a large **Quit** button and how much
-it frees. Dev processes left behind by a closed terminal, editor or AI agent — **orphans** — get their own list and a
+Mac slow, fans loud, "memory pressure" in the yellow? RAM Rescue opens on the **Memory** tab: a big ring shows how much
+RAM is in use, and the apps using the most are cards with their own icon (Chrome with its 45 helpers counted as one app),
+each with a large **Quit** button. Dev processes left behind by a closed terminal, editor or AI agent — **orphans** — get their own list and a
 **Quit all**. The **Localhost** and **Projects** tabs show every dev server on your Mac, whether it answers, and let you
 start or stop it.
 
-<sub>Formerly **RAM Rescue** (until 0.3.0). Your settings carry over.</sub>
+With **Pro**, RAM Rescue also watches for you from the menu bar: it warns you before your Mac slows down, catches apps
+that leak memory, and can quit forgotten dev processes by itself.
 
-![Localhost view: every open port with its health check, uptime, memory and who started it](docs/localhost.jpg)
+<sub>Formerly **Server Hub** (until 0.3.0). Your settings carry over.</sub>
+
+![Memory tab: a ring with 13.1 of 16 GB in use and Warning, the heaviest apps as cards with Quit buttons, Chrome tagged Leaking, and two orphans](docs/memory.jpg)
 
 <sub>Screenshots use a sample stack (`shop-web`, `shop-api`, `cms`, `blog`, `admin`, `queue`) in `~/code` and `~/work`.</sub>
 
@@ -30,6 +33,7 @@ start or stop it.
 ## Contents
 
 - [Features](#features)
+- [Pro — Guard](#pro--guard)
 - [Download](#download)
 - [Install](#install)
   - [Signed and notarized by Apple](#signed-and-notarized-by-apple)
@@ -48,6 +52,8 @@ start or stop it.
 ## Features
 
 ### Localhost — what is running right now
+
+![Localhost tab: every open port with its health dot, memory, uptime and a Stop button](docs/localhost.jpg)
 
 Every TCP port on your Mac that a browser could open: dev servers, local APIs, databases. The list
 refreshes every few seconds.
@@ -75,8 +81,6 @@ RAM Rescue never stops macOS system processes.
 
 ### Projects — start and stop what you build
 
-![Projects view: projects grouped by folder, start/stop buttons, and the detail panel with a live log](docs/projects.jpg)
-
 - **Only what runs, by default.** The list and the sidebar show running projects only, so a folder with 30 projects
   doesn't bury the 3 you are using. Tick **Show all** in the top bar to see every project, stopped ones included
   (RAM Rescue remembers the choice).
@@ -96,10 +100,12 @@ RAM Rescue never stops macOS system processes.
 
 ### Memory — what eats RAM, and what was left behind
 
-A third tab lists every app and background process by memory, so you can quit the heavy ones:
+The first tab shows what uses your memory, so you can quit the heavy ones:
 
-- **RAM bar** at the top: used of total (like Activity Monitor's *Memory Used*) and the macOS memory pressure
+- **Ring** on the left: used of total (like Activity Monitor's *Memory Used*) and the macOS memory pressure
   (Normal / Warning / Critical).
+- **Cards** for the heaviest apps (500 MB and up), with the app's icon, its memory and a big **Quit** (⌄ for Force Quit).
+  **All processes ›** opens the full list below.
 - **One row per app.** Chrome with 45 helper processes is one row, `Google Chrome · App · 45`, with their memory summed.
 - **Filters:** **High** (500 MB and up) · **Medium** (150–499 MB) · **Low** · **Orphans** · **All**. **Hide system** is on by
   default; system rows are never quittable.
@@ -112,11 +118,38 @@ A third tab lists every app and background process by memory, so you can quit th
   the Memory tab shows a red count while there are any. On the Localhost tab such a server gets a grey `orphan` tag.
   Apps from the Dock and `brew services` are never counted as orphans.
 
+![Dark mode: the same Memory tab](docs/memory-dark.jpg)
+
 ### Menu bar
 
-The menu bar shows how many ports are open, e.g. `6`, or `6 · 1!` when one of them is unhealthy. Click it to see every
-port with its status dot and open one in the browser, or stop a running project. If you close the window,
-RAM Rescue keeps running in the menu bar. Quit it from the menu bar icon.
+The menu bar shows the memory in use, e.g. `13.1 GB`, with `⚠︎` when memory pressure is high. Click it to see the
+3 heaviest apps (**Quit Google Chrome — 6.2 GB**), every open port (click to open it in the browser) and stop a running
+project. If you close the window, RAM Rescue keeps running in the menu bar. Quit it from the menu bar icon.
+
+## Pro — Guard
+
+Everything above is free and stays free. **Guard** is the Pro part: RAM Rescue keeps an eye on memory for you, from the
+menu bar, even with the window closed. Switch it on or off with **Guard** at the top right; click the word for settings.
+
+- **Warns before your Mac slows down.** When memory pressure stays yellow or red for 30 seconds, a notification names
+  the app using the most memory, with a **Quit** button. Click the banner instead to open RAM Rescue on that app.
+  The same app is not mentioned again for 30 minutes.
+- **Catches apps that leak memory.** RAM Rescue samples each app once a minute. An app that keeps growing — about
+  1 GB an hour or more, for at least 45 minutes, still growing in the last 20 minutes, and never giving back more than
+  20 % — gets a red **Leaking +1.4 GB/h** tag and one notification. Apps that grow then settle, or that free memory
+  regularly, are not flagged.
+- **Auto-quits orphans** (off by default). Dev processes left behind by a closed terminal, editor or agent are quit
+  after 15, 30 or 60 minutes. **Guard → Recent** lists everything Guard did.
+
+![Pro sheet: $9.99 once, no subscription, 2 Macs, 14-day trial, license key field](docs/pro.jpg)
+
+**Price:** $9.99 once, no subscription, a key works on 2 Macs. **14-day free trial** from the first launch of 0.5.0 —
+when it ends, Guard turns off and everything else keeps working. Bought a key? **Guard → License…**, paste it,
+**Activate**. Moving to a new Mac: **Deactivate this Mac** on the old one first. The trial date and the key are kept in
+your login Keychain; checking a key talks to Lemon Squeezy (the store), nothing else leaves your Mac.
+
+The source of Guard is in this repository like the rest (MIT). Building it yourself is fine; buying the key is how you
+support the app.
 
 ## Download
 
@@ -166,15 +199,13 @@ You should see `accepted` and `source=Notarized Developer ID`.
 
 ## Getting started
 
-![First launch: the Localhost list works right away; add your projects folder to start and stop projects](docs/start.jpg)
-
 1. **Open RAM Rescue.** The **Localhost** list works right away; there's nothing to set up.
 2. **Add your projects folder.** Open the sidebar (**☰** or `⌘B`), click **+ Add projects folder…** and pick the folder that holds your
    projects, e.g. `~/code`. If you keep projects in several places, use **+ Add folder** at the bottom of the
    sidebar to add more.
 3. **Start something.** Go to the **Projects** tab, tick **Show all**, select a project and press **▶** (or `Space`). Its details and log
    appear in the panel at the bottom. When it's ready, press **↗** (or `↵`) to open it in the browser.
-4. **Keep an eye on it.** Glance at the menu bar: if a `!` shows up, one of your servers stopped answering properly.
+4. **Keep an eye on it.** Glance at the menu bar: it shows the memory in use, with `⚠︎` when your Mac is running low.
 
 To stop scanning a folder, hover over it under **Folders** and click **×** twice. Your files are not touched;
 the folder's projects just leave the list.
@@ -222,9 +253,11 @@ RAM Rescue runs only on your Mac.
 - It reads the list of listening ports and processes (`lsof`, `ps`) and the project files in the folders **you** add.
 - Health checks go **only to localhost**.
 - Sharing on the LAN is off until you press it, and only reaches devices on your local network.
-- It saves its settings (your folder list and servers you added by hand) in
-  `~/Library/Application Support/server-hub/`.
-- No account, no analytics, no tracking, no network calls to anyone else.
+- It saves its settings (your folder list, servers you added by hand, Guard settings) in
+  `~/Library/Application Support/server-hub/`, and app icons it showed in `~/Library/Caches/server-hub/`.
+- **Pro only:** when you activate a license key, and about once a week after that, RAM Rescue sends the key to
+  Lemon Squeezy (the store that sells it) to check it. The trial date and the key stay in your login Keychain.
+- No account, no analytics, no tracking, no other network calls.
 
 ## FAQ
 

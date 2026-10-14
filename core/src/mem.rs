@@ -226,6 +226,41 @@ pub fn group(t: &HashMap<i32, MProc>, me: u32, ports: &HashMap<i32, BTreeSet<u16
     out
 }
 
+fn base64(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            out.push(if i <= c.len() { T[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// The app's own icon as a 64 px PNG data URL (`b:/Applications/X.app` group ids only), cached in ~/Library/Caches.
+/// None when the app ships no .icns (asset-catalog-only apps) — the UI draws a coloured tile instead.
+pub fn icon(id: &str) -> Option<String> {
+    let bundle = id.strip_prefix("b:")?;
+    let home = std::env::var("HOME").ok()?;
+    let dir = std::path::Path::new(&home).join("Library/Caches/server-hub/icons");
+    let key: String = bundle.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let png = dir.join(format!("{key}.png"));
+    if !png.exists() {
+        let plist = format!("{bundle}/Contents/Info.plist");
+        let name = run("/usr/bin/plutil", &["-extract", "CFBundleIconFile", "raw", &plist]);
+        let name = name.trim();
+        if name.is_empty() {
+            return None;
+        }
+        let file = if name.ends_with(".icns") { name.to_string() } else { format!("{name}.icns") };
+        let icns = format!("{bundle}/Contents/Resources/{file}");
+        std::fs::create_dir_all(&dir).ok()?;
+        run("/usr/bin/sips", &["-s", "format", "png", "-Z", "64", &icns, "--out", png.to_str()?]);
+    }
+    std::fs::read(&png).ok().filter(|b| !b.is_empty()).map(|b| format!("data:image/png;base64,{}", base64(&b)))
+}
+
 pub fn pressure() -> &'static str {
     match run("sysctl", &["-n", "kern.memorystatus_vm_pressure_level"]).trim() {
         "4" => "critical",
@@ -297,6 +332,13 @@ mod tests {
         let h = "/Applications/Google Chrome.app/Contents/Frameworks/X.framework/Helpers/Helper (Renderer).app/Contents/MacOS/Helper";
         assert_eq!(bundle_of(h), Some("/Applications/Google Chrome.app"));
         assert_eq!(bundle_of("/opt/homebrew/bin/node"), None);
+    }
+
+    #[test]
+    fn base64_matches_the_standard() {
+        assert_eq!(base64(b"Man"), "TWFu");
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"M"), "TQ==");
     }
 
     #[test]

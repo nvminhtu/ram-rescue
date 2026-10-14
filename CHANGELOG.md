@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — RAM Rescue Pro
+
+- **New look.** A big memory ring on the left, the heaviest apps as cards with their real icons and a large Quit
+  button, orphans in their own card. The full process list is one click away ("All processes"). Light and dark.
+- **New icon.** A lifebuoy around a memory stick.
+- **Guard (Pro).** RAM Rescue now watches memory from the menu bar, even with the window closed:
+  - **Warns before your Mac slows down** — when memory pressure stays yellow or red, a notification names the app
+    using the most memory, with a **Quit** button.
+  - **Catches apps that leak memory** — an app that keeps growing (about 1 GB an hour or more, for 45 minutes, without
+    ever giving memory back) gets a red **Leaking** tag and one notification.
+  - **Auto-quits orphans** (off by default) — dev processes left behind by a closed terminal, editor or agent are quit
+    after 15 / 30 / 60 minutes. Everything Guard does is listed under Guard → Recent.
+- **Menu bar shows memory.** RAM in use (⚠︎ when pressure is high) and the 3 heaviest apps with Quit, for everyone.
+- **Pricing.** Everything you had stays free. Guard is Pro: $9.99 once, 2 Macs, 14-day free trial — when it ends,
+  Guard turns off and the rest keeps working.
+
 ## 0.4.0 — RAM Rescue
 
 - **New name: RAM Rescue** (was Server Hub). The app is now first of all a memory rescuer; settings carry over.

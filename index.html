@@ -12,11 +12,14 @@
     <b class="brand" data-tauri-drag-region>RAM Rescue</b>
     <div class="tabs"><button id="tMem" data-view="__memory__">Memory</button><button id="tLocal" data-view="__localhost__">Localhost</button><button id="tProj" data-view="all">Projects</button></div>
     <span class="grow" data-tauri-drag-region></span>
+    <div id="guard" class="guard-control"></div>
+    <div class="server-tools">
     <label class="chk" id="allWrap" title="Also list projects that are not running"><input type="checkbox" id="showAll"> Show all</label>
     <button id="rescan" class="icon" title="Scan again">↻</button>
     <button id="addBtn" class="icon" title="Add a server by hand">＋</button>
     <button id="stopAll" class="icon" title="Stop every running server (asks first)">Stop all</button>
     <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search  ⌘K" spellcheck="false"></div>
+    </div>
   </header>
   <aside class="side" id="side"></aside>
   <main class="main"><div id="list" role="table" aria-label="Servers"></div></main>

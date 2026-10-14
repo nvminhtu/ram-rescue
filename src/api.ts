@@ -2,6 +2,9 @@
 // Inside the app: the Tauri `api` command. In a browser (npm run dev + npm run bridge): the HTTP bridge on :4410.
 import { invoke } from '@tauri-apps/api/core';
 
+// Lemon Squeezy checkout — fill in when the product exists
+export const BUY_URL = '';
+
 export const isTauri = '__TAURI_INTERNALS__' in window;
 const BRIDGE = 'http://127.0.0.1:4410/api/';
 
@@ -30,8 +33,14 @@ export interface Port {
 }
 export interface MemGroup {
   id: string; name: string; kind: 'App' | 'Background' | 'Dev' | 'System'; pids: number[]; count: number; mb: number;
-  cpu: number; secs: number; ports: number[]; system: boolean; orphan: boolean; leftBy: string | null;
+  leakMbH: number | null; cpu: number; secs: number; ports: number[]; system: boolean; orphan: boolean; leftBy: string | null;
 }
-export interface MemSnap { total: number; used: number; pressure: 'normal' | 'warning' | 'critical'; groups: MemGroup[] }
+export interface MemSnap { focus?: string | null; total: number; used: number; pressure: 'normal' | 'warning' | 'critical'; groups: MemGroup[] }
 export interface Outside { pid: number; name: string; cwd: string; args: string; ports: number[]; mb: number; secs: number; source: string }
 export interface Snapshot { root: string; roots: { path: string; exists: boolean }[]; rootExists: boolean; entries: Row[]; outside: Outside[]; ports: Port[]; unhealthy: number; running: number; lanIp: string | null }
+
+export interface License { state: 'trial' | 'licensed' | 'expired'; daysLeft: number; key: string }
+export interface GuardStatus {
+  license: License; on: boolean; autoOrphans: boolean; orphanMins: number; running: boolean;
+  log: { t: number; what: 'warned' | 'leaking' | 'quit'; name: string; mb: number }[];
+}

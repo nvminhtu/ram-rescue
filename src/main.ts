@@ -3,6 +3,7 @@
 // Poll the core every 2.5 s; the selected row's log every second while it runs.
 import './styles.css';
 import { call, isTauri, type Port, type Row, type Snapshot } from './api';
+import { createPro } from './pro';
 import { createMemory } from './memory';
 
 if (isTauri) document.documentElement.classList.add('tauri');
@@ -587,8 +588,11 @@ $('addForm').addEventListener('submit', async (ev) => {
   }
 });
 
+const pro = createPro(toast);
 const memory = createMemory(() => $('list'), {
   toast,
+  openPro: () => { memory.leave(); void pro.show(); },
+  activate: () => { setView(MEM); selected = null; render(); },
   query: () => $<HTMLInputElement>('q').value || '',
   get: store.get,
   set: store.set,
