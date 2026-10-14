@@ -118,6 +118,19 @@ The first tab shows what uses your memory, so you can quit the heavy ones:
   the Memory tab shows a red count while there are any. On the Localhost tab such a server gets a grey `orphan` tag.
   Apps from the Dock and `brew services` are never counted as orphans.
 
+### Clean — caches apps rebuild by themselves
+
+![Clean tab: iOS device support, Gradle, Xcode build files, npm and browser caches with sizes and a Clean button](docs/clean.jpg)
+
+The **Clean** tab measures caches that apps rebuild on their own and moves the ones you tick to the **Trash**:
+Xcode build files (DerivedData) and iOS device support, simulator caches, npm, Yarn, Gradle, CocoaPods, Homebrew,
+pip, Playwright browsers, and the caches of Chrome, Edge, Brave, Arc, Firefox and Safari.
+
+- Nothing is deleted: empty the Trash to get the space back, or drag a folder back out of it.
+- A browser's cache can be cleaned only while that browser is closed (the row says *Quit Chrome first*).
+- Safari's folder is protected by macOS: the row says *Needs Full Disk Access* until you allow it.
+- Never cookies, history, passwords, Xcode Archives or your projects — you stay signed in everywhere.
+
 ![Dark mode: the same Memory tab](docs/memory-dark.jpg)
 
 ### Menu bar
@@ -140,6 +153,15 @@ menu bar, even with the window closed. Switch it on or off with **Guard** at the
   regularly, are not flagged.
 - **Auto-quits orphans** (off by default). Dev processes left behind by a closed terminal, editor or agent are quit
   after 15, 30 or 60 minutes. **Guard → Recent** lists everything Guard did.
+
+- **24-hour History.** One point a minute: a chart of memory by app, the peak and the heaviest app — see what slowed
+  your Mac down this afternoon.
+
+  ![History: 24 hours of memory by app, with the peak and the heaviest app](docs/history.jpg)
+- **Meeting mode.** Pick the heavy apps once (Docker, Xcode, Slack…). **Free RAM** quits them before a call or a game;
+  **Bring them back** opens them again. Also in the menu bar.
+- **Quit when not used.** Rules like "quit Docker after 30 minutes in the background — only when memory is tight"
+  (or always). "Not used" means the app hasn't been in front for that long.
 
 ![Pro sheet: $9.99 once, no subscription, 2 Macs, 14-day trial, license key field](docs/pro.jpg)
 
@@ -253,7 +275,7 @@ RAM Rescue runs only on your Mac.
 - It reads the list of listening ports and processes (`lsof`, `ps`) and the project files in the folders **you** add.
 - Health checks go **only to localhost**.
 - Sharing on the LAN is off until you press it, and only reaches devices on your local network.
-- It saves its settings (your folder list, servers you added by hand, Guard settings) in
+- It saves its settings (your folder list, servers you added by hand, Guard settings, a 24-hour memory history) in
   `~/Library/Application Support/server-hub/`, and app icons it showed in `~/Library/Caches/server-hub/`.
 - **Pro only:** when you activate a license key, and about once a week after that, RAM Rescue sends the key to
   Lemon Squeezy (the store that sells it) to check it. The trial date and the key stay in your login Keychain.

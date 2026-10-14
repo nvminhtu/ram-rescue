@@ -4,6 +4,7 @@
 import './styles.css';
 import { call, isTauri, type Port, type Row, type Snapshot } from './api';
 import { createPro } from './pro';
+import { createClean } from './clean';
 import { createMemory } from './memory';
 
 if (isTauri) document.documentElement.classList.add('tauri');
@@ -13,6 +14,7 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&
 
 const LOCAL = '__localhost__';
 const MEM = '__memory__';
+const CLEAN = '__clean__';
 let snap: Snapshot = { root: '', roots: [], rootExists: true, entries: [], outside: [], ports: [], unhealthy: 0, running: 0, lanIp: null };
 let view = LOCAL; // LOCAL | 'all' | `g:<group>` | `r:<repo>` | `p:<repo>/<project>`
 const SEP = '\u0001';
@@ -63,10 +65,10 @@ function toast(msg: string, bad = false) {
 async function refresh(rescan = false) {
   try {
     snap = await call<Snapshot>('snapshot', { rescan });
-    if (view !== 'all' && view !== LOCAL && view !== MEM && !snap.entries.some((r) => inView(r) && shown(r))) setView(snap.entries.length ? 'all' : LOCAL);
+    if (view !== 'all' && view !== LOCAL && view !== MEM && view !== CLEAN && !snap.entries.some((r) => inView(r) && shown(r))) setView(snap.entries.length ? 'all' : LOCAL);
     render();
   } catch (e: any) {
-    $('list').innerHTML = `<div class="empty">Core unavailable.</div>`;
+    if(view!==MEM && view!==CLEAN) $('list').innerHTML = `<div class="empty">Core unavailable.</div>`; else render();
   }
 }
 
@@ -169,6 +171,7 @@ function rowHtml(r: Row) {
 
 function renderList() {
   // Memory redraws on its own 3 s beat; the 2.5 s snapshot must not rebuild it under the mouse
+  if (view === CLEAN) { clean.open(); return; }
   if (view === MEM) { if (!$('list').querySelector('.memtab')) memory.render(); return; }
   if (view === LOCAL) return renderPorts();
   const rows = visibleRows();
@@ -222,10 +225,11 @@ function renderPorts() {
 
 function render() {
   $('allWrap').style.display = view === LOCAL || view === MEM ? 'none' : '';
-  $('app').classList.toggle('memview', view === MEM);
+  $('app').classList.toggle('memview', view === MEM || view === CLEAN);
   $<HTMLInputElement>('showAll').checked = showAll;
   $('tLocal').classList.toggle('sel', view === LOCAL);
-  $('tProj').classList.toggle('sel', view !== LOCAL && view !== MEM);
+  $('tProj').classList.toggle('sel', view !== LOCAL && view !== MEM && view !== CLEAN);
+  $('tClean').classList.toggle('sel', view === CLEAN);
   $('tMem').classList.toggle('sel', view === MEM);
   $('rescan').title = view === LOCAL ? 'Check every port again' : view === MEM ? 'Read memory again' : 'Scan the projects folder again';
   const n = stopTargets().length;
@@ -384,7 +388,7 @@ document.addEventListener('click', (ev) => {
   if (b) {
     ev.stopPropagation();
     const d = b.dataset;
-    if (d.view != null) { if (view === MEM && d.view !== MEM) memory.leave(); setView(d.view); selected = null; render(); loadLog(); if (view === MEM) memory.load(); }
+    if (d.view != null) { if (view === MEM && d.view !== MEM) memory.leave(); if (view === CLEAN) clean.leave(); setView(d.view); selected = null; render(); loadLog(); if (view === MEM) memory.load(); }
     else if (d.start) start(d.start);
     else if (d.stop) stop(d.stop);
     else if (d.kill) stop(`port:${d.kill}`);
@@ -588,6 +592,7 @@ $('addForm').addEventListener('submit', async (ev) => {
   }
 });
 
+const clean = createClean(() => $('list'), toast, () => view === CLEAN);
 const pro = createPro(toast);
 const memory = createMemory(() => $('list'), {
   toast,

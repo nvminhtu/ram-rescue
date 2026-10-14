@@ -41,6 +41,14 @@ export interface Snapshot { root: string; roots: { path: string; exists: boolean
 
 export interface License { state: 'trial' | 'licensed' | 'expired'; daysLeft: number; key: string }
 export interface GuardStatus {
+  rules: Rule[]; meetingApps: AppChoice[]; meetingOn: boolean; meetingQuit: (AppChoice & {path: string})[];
   license: License; on: boolean; autoOrphans: boolean; orphanMins: number; running: boolean;
-  log: { t: number; what: 'warned' | 'leaking' | 'quit'; name: string; mb: number }[];
+  log: { t: number; what: 'warned' | 'leaking' | 'quit' | 'idle' | 'meeting'; name: string; mb: number; mins?: number; count?: number }[];
 }
+
+export interface AppChoice { id: string; name: string }
+export interface Rule extends AppChoice { mins: number; always: boolean }
+export interface CleanItem { id: string; name: string; group: 'Developer' | 'Browsers'; note: string; path: string; mb: number | null; readable: boolean; blockedBy: string | null }
+export interface CleanResult { ok: boolean; freedMb: number; done: string[]; skipped: {id: string; why: string}[] }
+export interface HistoryPoint { t: number; usedMb: number; apps: [string, number][] }
+export interface HistoryData { pro: boolean; points: HistoryPoint[] }

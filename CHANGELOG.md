@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — Clean, History, Meeting mode
+
+- **Clean (free).** A new tab lists caches that apps rebuild by themselves — Xcode build files and iOS device support,
+  simulator caches, npm, Yarn, Gradle, CocoaPods, Homebrew, pip, Playwright browsers, and the caches of Chrome, Edge,
+  Brave, Arc, Firefox and Safari — with their real size. Tick what you want and they go to the **Trash** (nothing is
+  deleted until you empty it). Browser caches only while that browser is closed. Never cookies, history, passwords or
+  your files: you stay signed in everywhere.
+- **History (Pro).** The last 24 hours of memory, by app: see what slowed your Mac down, the peak and the heaviest app.
+- **Meeting mode (Pro).** Pick the heavy apps once; one click quits them before a call or a game, one click opens them
+  again. Also in the menu bar.
+- **Quit when not used (Pro).** Rules like "quit Docker after 30 minutes in the background, when memory is tight".
+- Guard → Recent also lists what idle rules and Meeting mode did.
+
 ## 0.5.0 — RAM Rescue Pro
 
 - **New look.** A big memory ring on the left, the heaviest apps as cards with their real icons and a large Quit

@@ -1,5 +1,6 @@
 //! One entry point for the UI: `App::call(cmd, args) -> JSON`. The Tauri shell exposes it as the `api` command,
 //! `server-hub bridge` exposes it over HTTP (POST /api/<cmd>) so the same UI runs in a browser.
+use crate::clean;
 use crate::guard::{self, Alert, Guard};
 use crate::health;
 use crate::license;
@@ -46,6 +47,12 @@ pub struct App {
     pro_cache: Mutex<(Option<Instant>, bool)>,
     /// App to select when the window opens from a Guard notification (taken once by `memory`).
     focus: Mutex<Option<String>>,
+    history_file: PathBuf,
+    history: Mutex<guard::History>,
+    /// group id → last time it was the frontmost app (or first seen running), for idle rules
+    last_front: Mutex<HashMap<String, u64>>,
+    /// Meeting mode on: the apps it quit, to open again → [{ id, name, path }]
+    meeting: Mutex<Option<Vec<Value>>>,
 }
 
 /// Guard settings, saved in guard.json. Guard is on by default (it only runs with Pro / trial); auto-quit is opt-in.
@@ -55,11 +62,17 @@ pub struct GuardCfg {
     pub on: bool,
     pub auto_orphans: bool,
     pub orphan_mins: u64,
+    /// Idle rules (Pro).
+    #[serde(default)]
+    pub rules: Vec<guard::Rule>,
+    /// Meeting mode list (Pro): [{ id, name }].
+    #[serde(default)]
+    pub meeting_apps: Vec<Value>,
 }
 
 impl Default for GuardCfg {
     fn default() -> Self {
-        GuardCfg { on: true, auto_orphans: false, orphan_mins: 30 }
+        GuardCfg { on: true, auto_orphans: false, orphan_mins: 30, rules: vec![], meeting_apps: vec![] }
     }
 }
 
@@ -168,6 +181,8 @@ impl App {
             None => saved,
         };
         let guard_file = dir.join("guard.json");
+        let history_file = dir.join("history.json");
+        let history = std::fs::read_to_string(&history_file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let cfg: GuardCfg = std::fs::read_to_string(&guard_file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         App {
             roots: Mutex::new(roots),
@@ -183,6 +198,10 @@ impl App {
             guard_log: Mutex::new(VecDeque::new()),
             pro_cache: Mutex::new((None, false)),
             focus: Mutex::new(None),
+            history_file,
+            history: Mutex::new(history),
+            last_front: Mutex::new(HashMap::new()),
+            meeting: Mutex::new(None),
         }
     }
 
@@ -260,6 +279,16 @@ impl App {
             "quit" => self.quit(args),
             "icon" => Ok(json!({ "url": mem::icon(arg(args, "id")?) })),
             "guard" => Ok(self.guard_status()),
+            "clean" if std::env::var("SERVER_HUB_DEMO_CLEAN").is_ok() => demo("SERVER_HUB_DEMO_CLEAN"),
+            "clean" => Ok(clean::list(&running_exes())),
+            "cleanRun" => {
+                let ids: Vec<String> = args["ids"].as_array().ok_or("missing `ids`")?.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                Ok(clean::run(&ids, &running_exes()))
+            }
+            "openTrash" => open(&home().join(".Trash").to_string_lossy(), None),
+            "history" if std::env::var("SERVER_HUB_DEMO_HISTORY").is_ok() => demo("SERVER_HUB_DEMO_HISTORY"),
+            "history" => Ok(json!({ "pro": self.pro(), "points": self.history.lock().unwrap().points })),
+            "meeting" => self.meeting_set(args["on"].as_bool().ok_or("missing `on`")?),
             "guardSet" => self.guard_set(args),
             "licenseActivate" => license::activate(arg(args, "key")?).map(|_| self.license_changed()),
             "licenseDeactivate" => license::deactivate().map(|_| self.license_changed()),
@@ -470,7 +499,11 @@ impl App {
         let lic = license::current();
         let running = cfg.on && lic.state != "expired";
         let log: Vec<Value> = self.guard_log.lock().unwrap().iter().cloned().collect();
-        json!({ "license": lic, "on": cfg.on, "autoOrphans": cfg.auto_orphans, "orphanMins": cfg.orphan_mins, "running": running, "log": log })
+        let meeting = self.meeting.lock().unwrap().clone();
+        json!({
+            "license": lic, "on": cfg.on, "autoOrphans": cfg.auto_orphans, "orphanMins": cfg.orphan_mins, "running": running, "log": log,
+            "rules": cfg.rules, "meetingApps": cfg.meeting_apps, "meetingOn": meeting.is_some(), "meetingQuit": meeting.unwrap_or_default(),
+        })
     }
 
     /// `{ on?, autoOrphans?, orphanMins? }` → saved to guard.json.
@@ -485,6 +518,12 @@ impl App {
             }
             if let Some(v) = a["orphanMins"].as_u64() {
                 c.orphan_mins = v.clamp(5, 24 * 60);
+            }
+            if let Some(v) = a.get("rules").filter(|v| v.is_array()) {
+                c.rules = serde_json::from_value(v.clone()).map_err(|e| format!("bad rules: {e}"))?;
+            }
+            if let Some(v) = a["meetingApps"].as_array() {
+                c.meeting_apps = v.iter().filter(|x| x["id"].is_string()).map(|x| json!({ "id": x["id"], "name": x["name"] })).collect();
             }
             if let Some(d) = self.guard_file.parent() {
                 std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
@@ -504,9 +543,7 @@ impl App {
     /// enabled — quits orphans older than `orphanMins`. Returns what to tell the user. Does nothing without Pro / trial.
     pub fn guard_check(&self, minute: bool) -> Vec<Alert> {
         let cfg = self.guard_cfg.lock().unwrap().clone();
-        if !cfg.on || !self.pro() {
-            return vec![];
-        }
+        let pro = self.pro();
         let m = self.memory();
         let groups = m["groups"].as_array().cloned().unwrap_or_default();
         let rows: Vec<guard::Row> = groups
@@ -520,9 +557,46 @@ impl App {
             })
             .collect();
         let now = unix_now();
+        let pressure = m["pressure"].as_str().unwrap_or("normal");
+        // History is recorded for everyone (Pro sees the chart), once a minute, saved every 10 minutes
+        if minute {
+            let mut h = self.history.lock().unwrap();
+            h.push(now, m["used"].as_u64().unwrap_or(0) / 1_048_576, &rows);
+            if h.points.len() % 10 == 0 {
+                if let Ok(t) = serde_json::to_string(&*h) {
+                    let _ = std::fs::write(&self.history_file, t);
+                }
+            }
+        }
+        // idle rules: remember when each app was last in front (Pro, independent of the Guard switch)
+        if pro && !cfg.rules.is_empty() {
+            let front = front_app();
+            let mut lf = self.last_front.lock().unwrap();
+            lf.retain(|id, _| rows.iter().any(|r| r.id == id));
+            for r in &rows {
+                let e = lf.entry(r.id.to_string()).or_insert(now);
+                if front.as_deref().is_some_and(|f| r.id == format!("b:{f}")) {
+                    *e = now;
+                }
+            }
+            if minute {
+                for rule in &cfg.rules {
+                    if let (Some(&last), Some(row)) = (lf.get(&rule.id), groups.iter().find(|x| x["id"] == rule.id.as_str())) {
+                        if guard::idle_due(rule, last, now, pressure) {
+                            let _ = self.quit(&json!({ "pids": row["pids"], "force": false }));
+                            self.log_guard("idle", &rule.name, row["mb"].as_u64().unwrap_or(0));
+                            lf.insert(rule.id.clone(), now);
+                        }
+                    }
+                }
+            }
+        }
+        if !cfg.on || !pro {
+            return vec![];
+        }
         let mut out = vec![];
         let mut g = self.guard.lock().unwrap();
-        if let Some(a) = g.pressure(now, m["pressure"].as_str().unwrap_or("normal"), &rows) {
+        if let Some(a) = g.pressure(now, pressure, &rows) {
             if let Alert::Pressure { name, mb, .. } = &a {
                 self.log_guard("warned", name, *mb);
             }
@@ -547,6 +621,37 @@ impl App {
             }
         }
         out
+    }
+
+    /// Meeting mode (Pro): on = quit the listed apps that run, remember them; off = open them again.
+    fn meeting_set(&self, on: bool) -> Result<Value, String> {
+        if !self.pro() {
+            return Err("Meeting mode is part of RAM Rescue Pro.".into());
+        }
+        if on {
+            let list = self.guard_cfg.lock().unwrap().meeting_apps.clone();
+            let groups = self.memory()["groups"].as_array().cloned().unwrap_or_default();
+            let (mut quit, mut freed) = (vec![], 0u64);
+            for a in &list {
+                if let Some(g) = groups.iter().find(|g| g["id"] == a["id"]) {
+                    let _ = self.quit(&json!({ "pids": g["pids"], "force": false }));
+                    freed += g["mb"].as_u64().unwrap_or(0);
+                    quit.push(json!({ "id": g["id"], "name": g["name"], "path": g["id"].as_str().and_then(|i| i.strip_prefix("b:")) }));
+                }
+            }
+            self.log_guard("meeting", &format!("{} apps", quit.len()), freed);
+            *self.meeting.lock().unwrap() = Some(quit);
+            let mut st = self.guard_status();
+            st["freedMb"] = json!(freed);
+            Ok(st)
+        } else {
+            for a in self.meeting.lock().unwrap().take().unwrap_or_default() {
+                if let Some(p) = a["path"].as_str() {
+                    let _ = Command::new("/usr/bin/open").args(["-g", p]).spawn();
+                }
+            }
+            Ok(self.guard_status())
+        }
     }
 
     /// Pids of a memory group (to quit it from a notification).
@@ -710,6 +815,27 @@ impl App {
             "running": running,
         })
     }
+}
+
+/// Screenshots: a fixed JSON sample from the file in env var `k`.
+fn demo(k: &str) -> Result<Value, String> {
+    let f = std::env::var(k).map_err(|e| e.to_string())?;
+    serde_json::from_str(&std::fs::read_to_string(f).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Executable paths of running processes (Clean refuses a browser's cache while the browser runs).
+fn running_exes() -> Vec<String> {
+    mem::table().into_values().map(|p| p.exe).collect()
+}
+
+/// Bundle path of the frontmost app (`lsappinfo`, no permission needed).
+fn front_app() -> Option<String> {
+    let asn = Command::new("/usr/bin/lsappinfo").arg("front").output().ok()?;
+    let asn = String::from_utf8_lossy(&asn.stdout).trim().to_string();
+    let o = Command::new("/usr/bin/lsappinfo").args(["info", "-only", "bundlepath", &asn]).output().ok()?;
+    // "LSBundlePath"="/Applications/Xcode.app"
+    let t = String::from_utf8_lossy(&o.stdout);
+    t.split('=').nth(1).map(|v| v.trim().trim_matches('"').to_string()).filter(|v| !v.is_empty())
 }
 
 /// Server Hub itself and every ancestor (the Tauri shell, the terminal that ran `npm run app`…).

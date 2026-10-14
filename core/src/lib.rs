@@ -1,5 +1,6 @@
 //! Server Hub core: scan run configs, read live ports/processes, start and stop servers. No UI here.
 pub mod api;
+pub mod clean;
 pub mod guard;
 pub mod health;
 pub mod license;

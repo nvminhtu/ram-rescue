@@ -1,6 +1,8 @@
+import { showHistory } from './history';
+import { pickApps } from './pro';
 // Memory tab: what eats RAM (apps grouped with their helpers), filtered High / Medium / Low / Orphans, quit one or many.
 // The core re-checks every pid before it signals anything: system, other users' and Server Hub's own processes are refused.
-import { call, type MemGroup, type MemSnap } from './api';
+import { call, type MemGroup, type MemSnap, type GuardStatus } from './api';
 
 export interface MemDeps {
   toast(msg: string, bad?: boolean): void;
@@ -32,8 +34,25 @@ function appIcon(name: string) {
   return `<span class="micon" style="background:hsl(${h} 60% 62%)">${esc(name[0] || '?')}</span>`;
 }
 
+  const icons = new Map<string, string | null>();
+  export function memoryIcon(g: Pick<MemGroup, 'id' | 'name'> & Partial<MemGroup>, update: () => void = () => {}): string {
+    if (g.id.startsWith('b:') && !icons.has(g.id)) {
+      icons.set(g.id, null);
+      void call<{ url: string | null }>('icon', { id: g.id }).then(r => {
+        icons.set(g.id, r.url);
+        update();
+      }).catch(() => {});
+    }
+    if (g.kind === 'Dev' || g.orphan) return '<span class="terminal-tile">&gt;_</span>';
+    const url = icons.get(g.id);
+    return url ? `<img class="app-icon" src="${esc(url)}" alt="">` : appIcon(g.name);
+  }
+
+
 export function createMemory(el: () => HTMLElement, d: MemDeps) {
   let data: MemSnap | null = null;
+  let guard: GuardStatus | null = null;
+  let historyOpen = false, meetingBusy = false;
   let filter = (d.get('hub.memFilter') as Filter) || 'high';
   let hideSystem = d.get('hub.memSys') !== '0';
   let selected: string | null = null;
@@ -44,19 +63,7 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
   let full = d.get('hub.memFull') === '1';
   let highlight: string | null = null;
   let focusCard: string | null = null;
-  const icons = new Map<string, string | null>();
-  function icon(g: MemGroup): string {
-    if (g.id.startsWith('b:') && !icons.has(g.id)) {
-      icons.set(g.id, null);
-      void call<{ url: string | null }>('icon', { id: g.id }).then(r => {
-        icons.set(g.id, r.url);
-        if (d.active() && !confirm && !menuFor) render();
-      }).catch(() => {});
-    }
-    if (g.kind === 'Dev' || g.orphan) return '<span class="terminal-tile">&gt;_</span>';
-    const url = icons.get(g.id);
-    return url ? `<img class="app-icon" src="${esc(url)}" alt="">` : appIcon(g.name);
-  }
+  const icon = (g: MemGroup) => memoryIcon(g, () => { if(d.active() && !confirm && !menuFor && !historyOpen) render(); });
 
   const bucket = (g: MemGroup): Filter => (g.mb >= HIGH ? 'high' : g.mb >= MEDIUM ? 'medium' : 'low');
   const base = () => (data?.groups ?? []).filter((g) => !(hideSystem && g.system));
@@ -77,6 +84,7 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
     loading = true;
     try {
       data = await call<MemSnap>('memory');
+      if(!meetingBusy) guard = await call<GuardStatus>('guard').catch(()=>guard);
       const ids = new Set(data.groups.map((g) => g.id));
       for (const id of [...checked]) if (!ids.has(id)) checked.delete(id);
       if (selected && !ids.has(selected)) selected = null;
@@ -105,7 +113,7 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
     if (!data) return '';
     const p = data.pressure;
     const fraction = Math.max(0, Math.min(1, data.used / (data.total || 1)));
-    return `<aside class="memory-gauge ${p}"><div class="ring"><svg viewBox="0 0 220 220" aria-label="Memory used ${fmtGB(data.used)} of ${fmtGB(data.total)} GB"><circle class="ring-track" cx="110" cy="110" r="96"/><circle class="ring-fill" cx="110" cy="110" r="96" pathLength="100" stroke-dasharray="${fraction * 100} 100"/></svg><div class="ring-label"><b>${fmtGB(data.used)} GB</b><span>of ${Number(fmtGB(data.total))} GB</span></div></div><span class="pressure-pill">${p[0].toUpperCase() + p.slice(1)}</span></aside>`;
+    return `<aside class="memory-gauge ${p}"><div class="ring"><svg viewBox="0 0 220 220" aria-label="Memory used ${fmtGB(data.used)} of ${fmtGB(data.total)} GB"><circle class="ring-track" cx="110" cy="110" r="96"/><circle class="ring-fill" cx="110" cy="110" r="96" pathLength="100" stroke-dasharray="${fraction * 100} 100"/></svg><div class="ring-label"><b>${fmtGB(data.used)} GB</b><span>of ${Number(fmtGB(data.total))} GB</span></div></div><span class="pressure-pill">${p[0].toUpperCase() + p.slice(1)}</span><button class="all-processes" data-history>History</button></aside>`;
   }
 
   function filters() {
@@ -137,17 +145,34 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
       <span class="hmem"><b>${fmtMem(g.mb)}</b></span><span class="hbtns"><button class="bigquit" data-mquit="${esc(g.id)}">Quit</button><span class="menu-wrap"><button class="bigchev" data-mmenu="${esc(g.id)}" aria-label="More for ${esc(g.name)}">⌄</button>${menuFor === g.id ? `<div class="popover"><button class="danger" data-mforce="${esc(g.id)}">Force Quit</button></div>` : ''}</span></span></div>`;
   }
 
+  function meetingCard() {
+    const apps=guard?.meetingApps||[], on=guard?.meetingOn, pro=guard && guard.license.state!=='expired';
+    if(!apps.length&&!on)return `<button class="all-processes" data-meeting-setup>Set up meeting mode${pro?'':' <span class="pro-badge">PRO</span>'}</button>`;
+    const mb=(data?.groups||[]).filter(g=>apps.some(a=>a.id===g.id)).reduce((n,g)=>n+g.mb,0);
+    return `<section ${!pro?'data-meeting':''} class="meeting-card soft-card ${on?'meeting-on':''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 12H2v8h5v-8H4zm16 0h2v8h-5v-8h3z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span class="meeting-copy"><b>${on?`Meeting mode is on · ${guard?.meetingQuit?.length||0} apps closed`:'Meeting mode'}${pro?'':' <span class="pro-badge">PRO</span>'}</b>${on?'':`<small title="${esc(apps.map(a=>a.name).join(', '))}">Quits ${esc(apps.map(a=>a.name).join(', '))} (${fmtMem(mb)})</small>`}</span><button class="bigquit" data-meeting ${meetingBusy?'disabled':''}>${meetingBusy?'Working…':on?'Bring them back':'Free RAM'}</button><button class="icon" data-meeting-setup aria-label="Set up meeting mode">⚙</button></section>`;
+  }
+  async function meetingSetup() {
+    if(!guard || guard.license.state==='expired'){d.openPro();return;}
+    await pickApps(guard.meetingApps||[],false,async apps=>{guard=await call<GuardStatus>('guardSet',{meetingApps:apps});render();},d.toast);
+  }
+  async function meeting() {
+    if(!guard || guard.license.state==='expired'){d.openPro();return;}
+    if(meetingBusy)return; const on=!guard.meetingOn;meetingBusy=true;render();
+    try{const r=await call<GuardStatus & {freedMb?:number}>('meeting',{on});guard=r;d.toast(on?`Freed ${fmtMem(r.freedMb||0)} for your meeting`:'Meeting apps brought back');}
+    catch(e){d.toast(String(e),true);}finally{meetingBusy=false;render();void load();}
+  }
   function cards() {
     const candidates = data!.groups.filter(g => !g.system && !g.orphan && g.name.toLowerCase().includes(d.query().toLowerCase())).sort((a,b) => b.mb-a.mb);
     const heavy = candidates.slice(0, Math.min(6, Math.max(3, candidates.filter(g => g.mb >= HIGH).length)));
     const focused = focusCard && byId(focusCard);
     if (focused && !heavy.includes(focused) && !focused.system && !focused.orphan) heavy.push(focused);
     const orphans = data!.groups.filter(g => g.orphan && !g.system);
-    return `<div class="memory-overview">${summary()}<div class="memory-cards">${heavy.map(card).join('')}${orphans.length ? `<section class="orphans-card"><header><b>Orphans · <span>${fmtMem(orphans.reduce((a,g)=>a+g.mb,0))}</span></b><button class="bigquit" data-morphans>Quit all</button></header>${orphans.map(g=>`<div class="orphan-row ${highlight === g.id ? 'focused' : ''}" data-mrow="${esc(g.id)}"><span class="terminal-tile">&gt;_</span><span class="orphan-name">${esc(g.name)}<small>left by ${esc(g.leftBy || 'a closed app')}</small></span><span>${fmtMem(g.mb)}</span><button class="orphan-quit" data-mquit="${esc(g.id)}" aria-label="Quit ${esc(g.name)}">Quit</button></div>`).join('')}</section>` : ''}<button class="all-processes" data-mfull>All processes ›</button></div></div>`;
+    return `<div class="memory-overview">${summary()}<div class="memory-cards">${meetingCard()}${heavy.map(card).join('')}${orphans.length ? `<section class="orphans-card"><header><b>Orphans · <span>${fmtMem(orphans.reduce((a,g)=>a+g.mb,0))}</span></b><button class="bigquit" data-morphans>Quit all</button></header>${orphans.map(g=>`<div class="orphan-row ${highlight === g.id ? 'focused' : ''}" data-mrow="${esc(g.id)}"><span class="terminal-tile">&gt;_</span><span class="orphan-name">${esc(g.name)}<small>left by ${esc(g.leftBy || 'a closed app')}</small></span><span>${fmtMem(g.mb)}</span><button class="orphan-quit" data-mquit="${esc(g.id)}" aria-label="Quit ${esc(g.name)}">Quit</button></div>`).join('')}</section>` : ''}<div class="memory-links"><button class="all-processes" data-mfull>All processes ›</button><button class="all-processes" data-history>History</button></div></div></div>`;
   }
 
   function render() {
     const host = el();
+    if(historyOpen) return;
     if (!data) {
       host.innerHTML = '<div class="empty">Reading memory…</div>';
       return;
@@ -217,6 +242,10 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
   document.addEventListener('click', (ev) => {
     if (!d.active()) return;
     const t = ev.target as HTMLElement;
+    if(t.closest('[data-history]')){ev.stopPropagation();confirm=null;renderConfirm();historyOpen=true;if(data)void showHistory(el(),data,!!guard&&guard.license.state!=='expired',()=>{historyOpen=false;render();},d.openPro);return;}
+    if(t.closest('[data-meeting-setup]')){ev.stopPropagation();void meetingSetup();return;}
+    if(t.closest('[data-meeting]')){ev.stopPropagation();void meeting();return;}
+    if(historyOpen)return;
     const hit = t.closest<HTMLElement>('[data-mfull],[data-morphans],[data-mfilter],[data-msys],[data-mcheck],[data-mall],[data-mquit],[data-mmenu],[data-mforce],[data-mquitsel],[data-mheavyall],[data-mcancel],[data-mdo],[data-mrow],#memPop');
     if (!hit) {
       if (confirm || menuFor) { confirm = null; menuFor = null; render(); }
@@ -256,6 +285,6 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
   return {
     render,
     load,
-    leave() { confirm = null; menuFor = null; renderConfirm(); },
+    leave() { historyOpen = false; confirm = null; menuFor = null; renderConfirm(); },
   };
 }

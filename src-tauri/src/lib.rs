@@ -44,7 +44,7 @@ fn top_apps(mem: &Value) -> Vec<&Value> {
 }
 
 /// Menu bar list: every open localhost port (click = open in browser), running rows with ■, open, quit.
-fn tray_menu(app: &AppHandle, snap: &Value, mem: &Value) -> tauri::Result<Menu<tauri::Wry>> {
+fn tray_menu(app: &AppHandle, snap: &Value, mem: &Value, guard: &Value) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     let p = match mem["pressure"].as_str() { Some("warning") => " · Warning", Some("critical") => " · Critical", _ => "" };
     let head = format!("Memory · {} of {}{p}", gb(mem["used"].as_u64().unwrap_or(0)), gb(mem["total"].as_u64().unwrap_or(0)));
@@ -53,6 +53,15 @@ fn tray_menu(app: &AppHandle, snap: &Value, mem: &Value) -> tauri::Result<Menu<t
         let leak = if g["leakMbH"].is_u64() { "  · leaking" } else { "" };
         let label = format!("Quit {} — {}{leak}", g["name"].as_str().unwrap_or("?"), size(g["mb"].as_u64().unwrap_or(0)));
         menu.append(&MenuItem::with_id(app, format!("qg:{}", g["id"].as_str().unwrap_or("")), label, true, None::<&str>)?)?;
+    }
+    // Meeting mode (Pro): shown once a list is set up in the app
+    if guard["running"] == true || guard["license"]["state"] != "expired" {
+        if guard["meetingOn"] == true {
+            let n = guard["meetingQuit"].as_array().map(|a| a.len()).unwrap_or(0);
+            menu.append(&MenuItem::with_id(app, "meeting:off", format!("End meeting mode — reopen {n} apps"), true, None::<&str>)?)?;
+        } else if guard["meetingApps"].as_array().is_some_and(|a| !a.is_empty()) {
+            menu.append(&MenuItem::with_id(app, "meeting:on", "Meeting mode — free RAM", true, None::<&str>)?)?;
+        }
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     let ports = snap["ports"].as_array().cloned().unwrap_or_default();
@@ -122,11 +131,12 @@ pub fn run() {
             let _ = mac_notification_sys::set_application(&app.config().identifier);
             let snap = core.snapshot(true);
             let mem = core.call("memory", &json!({})).unwrap_or_default();
+            let guard = core.call("guard", &json!({})).unwrap_or_default();
             let tray = TrayIconBuilder::with_id("hub")
                 .icon(app.default_window_icon().cloned().expect("app icon"))
                 .title(tray_title(&mem))
                 .tooltip("RAM Rescue")
-                .menu(&tray_menu(&handle, &snap, &mem)?)
+                .menu(&tray_menu(&handle, &snap, &mem, &guard)?)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, ev| {
                     let id = ev.id().as_ref().to_string();
@@ -140,6 +150,8 @@ pub fn run() {
                         _ => {
                             if let Some(url) = id.strip_prefix("url:") {
                                 let _ = hub_core::api::open(url, None);
+                            } else if let Some(on) = id.strip_prefix("meeting:") {
+                                let _ = app.state::<Arc<App>>().call("meeting", &json!({ "on": on == "on" }));
                             } else if let Some(g) = id.strip_prefix("qg:") {
                                 let _ = app.state::<Arc<App>>().quit_group(g);
                             } else if let Some(row) = id.strip_prefix("stop:") {
@@ -155,21 +167,28 @@ pub fn run() {
             let core = core.clone();
             std::thread::spawn(move || {
                 let mut last = String::new();
+                let mut guard = guard;
                 for tick in 0u64.. {
                     std::thread::sleep(Duration::from_secs(3));
                     let snap = core.snapshot(false);
                     let mem = core.call("memory", &json!({})).unwrap_or_default();
                     let _ = tray.set_title(Some(tray_title(&mem)));
+                    // the guard status reads the Keychain: every 30 s is enough for the menu
+                    if tick % 10 == 0 {
+                        guard = core.call("guard", &json!({})).unwrap_or_default();
+                    }
                     let sig = format!(
-                        "{:?}{:?}{:?}{}",
+                        "{:?}{:?}{:?}{}{}{}",
                         snap["entries"].as_array().map(|a| a.iter().filter(|r| r["status"] == "running").map(|r| format!("{}{}", r["id"], r["ports"])).collect::<Vec<_>>()),
                         snap["ports"].as_array().map(|a| a.iter().map(|p| format!("{}{}", p["port"], p["health"])).collect::<Vec<_>>()),
                         top_apps(&mem).iter().map(|g| format!("{}{}{}", g["id"], g["mb"].as_u64().unwrap_or(0) / 256, g["leakMbH"].is_u64())).collect::<Vec<_>>(),
-                        mem["pressure"]
+                        mem["pressure"],
+                        guard["meetingOn"],
+                        guard["meetingApps"]
                     );
                     if sig != last {
                         last = sig;
-                        if let Ok(m) = tray_menu(&handle, &snap, &mem) {
+                        if let Ok(m) = tray_menu(&handle, &snap, &mem, &guard) {
                             let _ = tray.set_menu(Some(m));
                         }
                     }

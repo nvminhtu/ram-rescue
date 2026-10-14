@@ -140,6 +140,51 @@ impl Guard {
     }
 }
 
+/// History (Pro view, always recorded): one point a minute for 24 hours — RAM used and the 6 heaviest apps.
+pub const HISTORY_POINTS: usize = 24 * 60;
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct Point {
+    pub t: u64,
+    #[serde(rename = "usedMb")]
+    pub used_mb: u64,
+    /// [name, mb] of the heaviest apps.
+    pub apps: Vec<(String, u64)>,
+}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+pub struct History {
+    pub points: VecDeque<Point>,
+}
+
+impl History {
+    /// `rows` sorted heaviest first; system rows are skipped.
+    pub fn push(&mut self, now: u64, used_mb: u64, rows: &[Row]) {
+        let apps = rows.iter().filter(|r| r.quittable).take(6).map(|r| (r.name.to_string(), r.mb)).collect();
+        self.points.push_back(Point { t: now, used_mb, apps });
+        // keep 24 h by time too: a Mac that slept leaves a gap, not stale points
+        while self.points.len() > HISTORY_POINTS || self.points.front().is_some_and(|p| p.t + 24 * 3600 < now) {
+            self.points.pop_front();
+        }
+    }
+}
+
+/// Idle rule (Pro): quit an app the user hasn't brought to the front for `mins` minutes — only while memory is tight,
+/// unless `always`.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct Rule {
+    pub id: String,
+    pub name: String,
+    pub mins: u64,
+    #[serde(default)]
+    pub always: bool,
+}
+
+/// Pure: should this rule fire? `last_front` = last time the app was frontmost (or first seen running).
+pub fn idle_due(rule: &Rule, last_front: u64, now: u64, pressure: &str) -> bool {
+    now >= last_front + rule.mins * 60 && (rule.always || pressure != "normal")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +246,30 @@ mod tests {
         }
         assert_eq!(alerts, 1);
         assert!(g.leaking.contains_key("chrome") && !g.leaking.contains_key("slack"));
+    }
+
+    #[test]
+    fn idle_rules_wait_for_idle_time_and_tight_memory() {
+        let r = Rule { id: "b:/Applications/Docker.app".into(), name: "Docker".into(), mins: 30, always: false };
+        assert!(!idle_due(&r, 1000, 1000 + 29 * 60, "warning"), "used 29 min ago");
+        assert!(!idle_due(&r, 1000, 1000 + 31 * 60, "normal"), "memory is fine");
+        assert!(idle_due(&r, 1000, 1000 + 31 * 60, "warning"));
+        let always = Rule { always: true, ..r };
+        assert!(idle_due(&always, 1000, 1000 + 30 * 60, "normal"));
+    }
+
+    #[test]
+    fn history_keeps_24h_and_the_6_heaviest_apps() {
+        let mut h = History::default();
+        let rows: Vec<Row> = (0..8).map(|i| Row { id: "x", name: ["a", "b", "c", "d", "e", "f", "g", "h"][i], mb: 900 - i as u64 * 100, quittable: i != 1, orphan: false }).collect();
+        for m in 0..1500u64 {
+            h.push(m * 60, 9000, &rows);
+        }
+        assert_eq!(h.points.len(), HISTORY_POINTS);
+        let names: Vec<&str> = h.points[0].apps.iter().map(|a| a.0.as_str()).collect();
+        assert_eq!(names, ["a", "c", "d", "e", "f", "g"], "system row b skipped");
+        h.push(1500 * 60 + 25 * 3600, 9000, &rows);
+        assert_eq!(h.points.len(), 1, "after a long sleep only the new point is within 24 h");
     }
 
     #[test]
