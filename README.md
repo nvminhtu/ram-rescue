@@ -91,6 +91,24 @@ Server Hub never stops macOS system processes.
 - **■ Stop all** asks first and lists every server it will stop.
 - **+ Add** a server by hand (name, folder, command, port) for anything Server Hub can't detect.
 
+### Memory — what eats RAM, and what was left behind
+
+A third tab lists every app and background process by memory, so you can quit the heavy ones:
+
+- **RAM bar** at the top: used of total (like Activity Monitor's *Memory Used*) and the macOS memory pressure
+  (Normal / Warning / Critical).
+- **One row per app.** Chrome with 45 helper processes is one row, `Google Chrome · App · 45`, with their memory summed.
+- **Filters:** **High** (500 MB and up) · **Medium** (150–499 MB) · **Low** · **Orphans** · **All**. **Hide system** is on by
+  default; system rows are never quittable.
+- **Quit** on the selected row asks first and says how much it frees. *Quit* asks the app to close normally (only its
+  main process is signalled, so it shuts its helpers down itself); *Force Quit* kills every process of the app.
+  Tick several rows to quit them in one go.
+- **Orphans:** dev processes whose terminal, editor or agent is gone — a `vite` started by Claude Code, a Playwright
+  Chromium after a test run, a `tsc --watch` from a closed VS Code. Their parent is now `launchd`, so nothing will ever stop
+  them. The **Orphans** filter lists them with **Left by** (who started them, when Server Hub saw it) and **Quit all**;
+  the Memory tab shows a red count while there are any. On the Localhost tab such a server gets a grey `orphan` tag.
+  Apps from the Dock and `brew services` are never counted as orphans.
+
 ### Menu bar
 
 The menu bar shows how many ports are open, e.g. `6`, or `6 · 1!` when one of them is unhealthy. Click it to see every
@@ -176,7 +194,10 @@ Want to open your dev site on your phone, or show it to a teammate on the same W
 - **Health check:** Server Hub opens a connection to `127.0.0.1:<port>` (or `[::1]`), sends `HEAD /` and reads the
   status line. The timeout is 0.7 s and each result is reused for 4 s, so it stays light even with dozens of ports.
 - **Who started it:** Server Hub walks up the process tree until it finds a known app (Terminal, VS Code…).
-  If the starting terminal was closed, the process belongs to `launchd`.
+  If the starting terminal was closed, the process belongs to `launchd`; Server Hub remembers who started it while it
+  could still see the parent, and shows it as **Left by**.
+- **Memory:** `ps` gives each process's resident memory and CPU; processes inside one `.app` bundle are summed. Memory used
+  comes from `vm_stat` (app + wired + compressed) and the pressure from `kern.memorystatus_vm_pressure_level`.
 - **Finding projects:** Server Hub scans your folders up to 10 levels deep and skips `node_modules`, `.git`, `dist`,
   `build`, `target`, `Pods` and similar folders. Projects that sit directly inside a folder are grouped under that folder's name.
 

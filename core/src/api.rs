@@ -1,6 +1,7 @@
 //! One entry point for the UI: `App::call(cmd, args) -> JSON`. The Tauri shell exposes it as the `api` command,
 //! `server-hub bridge` exposes it over HTTP (POST /api/<cmd>) so the same UI runs in a browser.
 use crate::health;
+use crate::mem;
 use crate::procs::{self, Listener, Proc};
 use crate::scan::{self, Custom, Entry};
 use crate::share::{self, Shares};
@@ -32,6 +33,8 @@ pub struct App {
     entries: Mutex<(Option<Instant>, Vec<Entry>)>,
     runs: Arc<Mutex<HashMap<String, Run>>>,
     shares: Shares,
+    /// pid → who started it (Terminal, Claude Code…), remembered while the parent is still alive so orphans keep a name
+    starters: Mutex<HashMap<i32, String>>,
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -134,7 +137,7 @@ impl App {
             None if saved.is_empty() => vec![default_root()],
             None => saved,
         };
-        App { roots: Mutex::new(roots), custom_file: dir.join("custom.json"), settings_file, entries: Mutex::new((None, vec![])), runs: Arc::new(Mutex::new(HashMap::new())), shares: Shares::default() }
+        App { roots: Mutex::new(roots), custom_file: dir.join("custom.json"), settings_file, entries: Mutex::new((None, vec![])), runs: Arc::new(Mutex::new(HashMap::new())), shares: Shares::default(), starters: Mutex::new(HashMap::new()) }
     }
 
     pub fn roots(&self) -> Vec<PathBuf> {
@@ -203,6 +206,8 @@ impl App {
             "removeRoot" => self.remove_root(arg(args, "path")?),
             "share" => self.share(port_arg(args)?),
             "unshare" => Ok(json!({ "ok": self.shares.stop(port_arg(args)?) })),
+            "memory" => Ok(self.memory()),
+            "quit" => self.quit(args),
             _ => Err(format!("unknown command `{cmd}`")),
         }
     }
@@ -347,6 +352,59 @@ impl App {
         Ok(json!({ "ok": true }))
     }
 
+    fn remember_starters(&self, table: &HashMap<i32, Proc>) {
+        let mut m = self.starters.lock().unwrap();
+        m.retain(|pid, _| table.contains_key(pid));
+        for p in table.values().filter(|p| p.ppid > 1 && mem::bundle_of(&p.exe).is_none()) {
+            let s = procs::source(p.pid, table);
+            if s != "launchd" && s != "?" {
+                m.insert(p.pid, s);
+            }
+        }
+    }
+
+    /// Memory tab: RAM used/total, pressure, and every process grouped by app (system ones flagged, never quittable).
+    fn memory(&self) -> Value {
+        let t = mem::table();
+        let uid = unsafe { libc::getuid() };
+        let ports: HashMap<i32, std::collections::BTreeSet<u16>> = procs::listeners().into_iter().map(|l| (l.pid, l.ports)).collect();
+        let left = self.starters.lock().unwrap().clone();
+        let groups = mem::group(&t, uid, &ports, &protected(&t), &left);
+        json!({
+            "total": mem::total_bytes(),
+            "used": mem::used_bytes(),
+            "pressure": mem::pressure(),
+            "groups": groups.iter().map(mem::to_json).collect::<Vec<_>>(),
+        })
+    }
+
+    /// `{ pids: [..], force }` — SIGTERM (apps quit cleanly) or SIGKILL. Checked again here: only your own,
+    /// non-system processes, never Server Hub itself or what launched it.
+    fn quit(&self, args: &Value) -> Result<Value, String> {
+        let pids: Vec<i32> = args["pids"].as_array().ok_or("missing `pids`")?.iter().filter_map(|p| p.as_i64().map(|p| p as i32)).collect();
+        let force = args["force"].as_bool().unwrap_or(false);
+        let t = mem::table();
+        let uid = unsafe { libc::getuid() };
+        let keep = protected(&t);
+        let (mut done, mut refused) = (0, vec![]);
+        // a clean quit only asks the top process of each app (Chrome, not its 45 helpers) — the app closes its own children
+        let asked: HashSet<i32> = pids.iter().copied().collect();
+        let pids: Vec<i32> = if force { pids } else { pids.into_iter().filter(|p| t.get(p).is_some_and(|x| !asked.contains(&x.ppid))).collect() };
+        for pid in pids {
+            match t.get(&pid) {
+                Some(p) if !keep.contains(&pid) && !mem::is_system_proc(p, uid) => {
+                    let group = p.pgid == pid && mem::is_orphan(p, uid); // orphan leader: take its children (esbuild…) too
+                    let target = if group { -pid } else { pid };
+                    unsafe { libc::kill(target, if force { libc::SIGKILL } else { libc::SIGTERM }) };
+                    done += 1;
+                }
+                Some(_) => refused.push(pid),
+                None => {}
+            }
+        }
+        Ok(json!({ "ok": true, "quit": done, "refused": refused }))
+    }
+
     /// Make localhost:`port` reachable from other devices on the LAN → `{ url }` to paste on a phone / another laptop.
     fn share(&self, port: u16) -> Result<Value, String> {
         let ip = share::lan_ip().ok_or("this Mac is not on a local network (Wi-Fi / Ethernet)")?;
@@ -366,6 +424,7 @@ impl App {
     pub fn snapshot(&self, rescan: bool) -> Value {
         let entries = self.entries(rescan);
         let table = procs::ps();
+        self.remember_starters(&table);
         let me = std::process::id() as i32;
         let relays = self.shares.relay_ports();
         let mut listeners = procs::listeners();
@@ -409,6 +468,9 @@ impl App {
                     "code": h.and_then(|h| h.code),
                     "ms": h.map(|h| h.ms),
                     "rowId": row.map(|r| r["id"].clone()),
+                    // its terminal / editor / agent is gone: nobody will stop it unless you do
+                    "orphan": p.is_some_and(|p| p.ppid == 1 && mem::bundle_of(&p.exe).is_none()),
+                    "leftBy": self.starters.lock().unwrap().get(&l.pid).cloned(),
                     // LAN: "open" = already reachable from other devices, "shared" = through our relay, null = this Mac only
                     "lan": if l.public.contains(port) { Some("open") } else if self.shares.public_port(*port).is_some() { Some("shared") } else { None },
                     "lanUrl": if l.public.contains(port) { share::url(ip, *port) } else { self.shares.public_port(*port).and_then(|p| share::url(ip, p)) },
@@ -462,6 +524,17 @@ impl App {
             "running": running,
         })
     }
+}
+
+/// Server Hub itself and every ancestor (the Tauri shell, the terminal that ran `npm run app`…).
+fn protected(t: &HashMap<i32, mem::MProc>) -> Vec<i32> {
+    let mut out = vec![];
+    let mut cur = std::process::id() as i32;
+    while cur > 1 && out.len() < 40 {
+        out.push(cur);
+        cur = t.get(&cur).map(|p| p.ppid).unwrap_or(0);
+    }
+    out
 }
 
 /// Decide, for every row, whether it runs and which process is it. One listener belongs to at most one row.

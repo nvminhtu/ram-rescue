@@ -1,7 +1,9 @@
-// Server Hub UI: "Localhost" = every open port with a health check; "Projects" = everything that can run, grouped by repo.
+// Server Hub UI: "Localhost" = every open port with a health check; "Projects" = everything that can run, grouped by repo;
+// "Memory" = what eats RAM, with orphans (memory.ts).
 // Poll the core every 2.5 s; the selected row's log every second while it runs.
 import './styles.css';
 import { call, isTauri, type Port, type Row, type Snapshot } from './api';
+import { createMemory } from './memory';
 
 if (isTauri) document.documentElement.classList.add('tauri');
 
@@ -9,6 +11,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const LOCAL = '__localhost__';
+const MEM = '__memory__';
 let snap: Snapshot = { root: '', roots: [], rootExists: true, entries: [], outside: [], ports: [], unhealthy: 0, running: 0, lanIp: null };
 let view = LOCAL; // LOCAL | 'all' | `g:<group>` | `r:<repo>` | `p:<repo>/<project>`
 const SEP = '\u0001';
@@ -22,7 +25,7 @@ if (view === '__outside__') view = LOCAL;
 function setView(v: string) { view = v; store.set('hub.view', v); }
 // Sidebar starts closed; the Localhost / Projects tabs in the top bar are enough to move around.
 function setSide(open: boolean) { $('app').classList.toggle('noside', !open); store.set('hub.side', open ? '1' : '0'); }
-setSide(store.get('hub.side') === '1');
+setSide(false);
 const inView = (r: Row) =>
   view === 'all' || view === `g:${r.group}` || view === `r:${r.repo}` || view === `p:${r.repo}${SEP}${r.project}`;
 const isOn = (r: Row) => r.status === 'running' || r.status === 'starting';
@@ -34,12 +37,18 @@ let selected: string | null = null; // row id, or `port:<n>` in the localhost vi
 let armed: string | null = null; // stop button waiting for a second click
 let busy = new Set<string>();
 
-function ago(s: number | null) {
-  if (s == null) return '';
-  if (s < 60) return `${s}s`;
+const stopIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="7" y="7" width="6" height="6" rx=".7" fill="currentColor"/></svg>';
+const openIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4H4v12h12v-6M11 3h6v6M17 3l-9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+let logOpen = store.get('hub.log') === '1';
+let menuOpen = false;
+function fmtUp(s: number | null) {
+  if (s == null) return '—';
+  if (s < 60) return `${Math.floor(s)}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
+  return `${Math.floor(s / 3600)}h${s % 3600 >= 60 ? ` ${Math.floor(s % 3600 / 60)}m` : ''}`;
+}
+function tableHead(projects = false) {
+  return `<div class="table-head ${projects ? 'project-grid' : 'local-grid'}" role="row"><span role="columnheader" aria-label="Status"></span><span role="columnheader">Port</span><span role="columnheader">Name</span><span class="health" role="columnheader" aria-label="Health"></span>${projects ? '' : '<span class="mem" role="columnheader">Mem</span>'}<span class="up" role="columnheader">Up</span><span role="columnheader" aria-label="Actions"></span></div>`;
 }
 
 function toast(msg: string, bad = false) {
@@ -53,10 +62,10 @@ function toast(msg: string, bad = false) {
 async function refresh(rescan = false) {
   try {
     snap = await call<Snapshot>('snapshot', { rescan });
-    if (view !== 'all' && view !== LOCAL && !snap.entries.some((r) => inView(r) && shown(r))) setView(snap.entries.length ? 'all' : LOCAL);
+    if (view !== 'all' && view !== LOCAL && view !== MEM && !snap.entries.some((r) => inView(r) && shown(r))) setView(snap.entries.length ? 'all' : LOCAL);
     render();
   } catch (e: any) {
-    $('list').innerHTML = `<div class="empty">Can't reach the Server Hub core.<br><span class="mono faint">${esc(e.message)}</span><br><br>In a browser, start it with <span class="mono">npm run bridge</span>.</div>`;
+    $('list').innerHTML = `<div class="empty">Core unavailable.</div>`;
   }
 }
 
@@ -75,7 +84,7 @@ function renderSide() {
   type G = { n: number; on: number };
   const count = (rs: Row[]): G => ({ n: rs.length, on: rs.filter(isOn).length });
   const item = (key: string, label: string, g: G, cls = '', extra = '') =>
-    `<button class="si ${view === key ? 'sel' : ''} ${cls}" data-view="${esc(key)}">${extra}<span class="sd ${g.on ? 'on' : ''}"></span><span class="sl" title="${esc(label)}">${esc(label)}</span><span class="sc">${g.on ? `<b>${g.on}</b>/` : ''}${g.n}</span></button>`;
+    `<button class="si ${view === key ? 'sel' : ''} ${cls}" data-view="${esc(key)}">${extra}${cls === 'grp' ? '<svg class="folder" viewBox="0 0 16 13" aria-hidden="true"><path d="M1.5 2.5a1 1 0 0 1 1-1h3.2l1.5 1.6h6.3a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg>' : `<span class="sd ${g.on ? 'on' : ''}"></span>`}<span class="sl" title="${esc(label)}">${esc(label)}</span><span class="sc">${g.on ? `<b>${g.on}</b>/` : ''}${g.n}</span></button>`;
   const bad = snap.unhealthy;
   let h = `<button class="si ${view === LOCAL ? 'sel' : ''} local" data-view="${LOCAL}"><span class="sd ${snap.ports.length ? (bad ? 'bad' : 'on') : ''}"></span><span class="sl">Localhost</span><span class="sc">${bad ? `<i>${bad}!</i> ` : ''}${snap.ports.length}</span></button>`;
   h += '<div class="sh">Projects</div>';
@@ -123,12 +132,12 @@ function actions(r: Row) {
   const on = isOn(r);
   const b = busy.has(r.id);
   let h = '';
-  if (r.url && (on || !r.canStart)) h += `<button class="act" data-open="${esc(r.url)}" title="Open ${esc(r.url)}">↗</button>`;
+  if (r.url && (on || !r.canStart)) h += `<button class="act" data-open="${esc(r.url)}" title="Open ${esc(r.url)}">${openIcon}</button>`;
   if (on) {
     const isArmed = armed === r.id;
-    h += `<button class="act stop ${isArmed ? 'armed' : ''}" data-stop="${r.id}" title="${r.own ? 'Stop' : `Stop (started by ${esc(r.source)})`}">${isArmed ? 'Stop?' : '■'}</button>`;
+    h += `<button class="act stop ${isArmed ? 'armed' : ''}" data-stop="${r.id}" title="${r.own ? 'Stop' : `Stop (started by ${esc(r.source)})`}">${isArmed ? 'Stop?' : stopIcon}</button>`;
   } else if (r.canStart) {
-    h += `<button class="act play" data-start="${r.id}" ${b ? 'disabled' : ''} title="Start">${b ? '…' : '▶'}</button>`;
+    h += `<button class="act play" data-start="${r.id}" ${b ? 'disabled' : ''} title="Start">${b ? '…' : 'Start'}</button>`;
   }
   return h;
 }
@@ -146,38 +155,39 @@ function shareBtn(port: number) {
 }
 
 function rowHtml(r: Row) {
-  const port = r.ports.length ? r.ports.map((p) => `:${p}`).join(' ') : r.port ? `:${r.port}` : r.kind === 'run.sh' ? 'game' : '';
-  const warn = r.note ? `<span class="chip red" title="${esc(r.note)}">${esc(r.note)}</span>` : r.sharedPort.length && r.status !== 'running' ? `<span class="chip amber" title="Same port as ${esc(r.sharedPort.join(', '))}">shares :${r.port}</span>` : '';
-  const sick = r.status === 'running' && r.health === 'unhealthy';
-  return `<div class="row ${selected === r.id ? 'sel' : ''} st-${r.status}" data-row="${r.id}">
-    <span class="dot ${sick ? 'unhealthy' : r.status}" title="${sick ? 'running, but unhealthy (5xx or no answer)' : r.status}"></span>
-    <span class="nm">${esc(r.name)}</span>
-    <span class="port">${warn || esc(port)}</span>
-    <span class="acts">${actions(r)}</span>
-  </div>`;
+  const on = isOn(r);
+  const port = r.ports.length ? r.ports.map((p) => `:${p}`).join(' ') : r.port ? `:${r.port}` : '—';
+  const p = snap.ports.find((p) => p.rowId === r.id || r.ports.includes(p.port));
+  const health = on ? (r.health === 'unhealthy' ? (p ? healthText(p) : 'no answer') : r.health === 'tcp' ? 'tcp' : '') : '';
+  const warning = r.note || (r.sharedPort.length && !on ? `shares :${r.port}` : '');
+  return `<div role="row" class="row project-grid ${selected === r.id ? 'sel' : ''} st-${r.status}" data-row="${esc(r.id)}" title="${esc(r.source || r.kind)}">
+    <span class="dot ${on ? r.health || r.status : r.status}"></span><span class="port">${esc(port)}</span><span class="nm">${esc(r.name)}</span>
+    <span class="health ${warning ? (r.note ? 'redt' : 'warning') : r.health === 'unhealthy' ? 'redt' : ''}" title="${esc(warning || health)}">${esc(warning || health)}</span>
+    <span class="up">${on ? fmtUp(r.secs) : '—'}</span><span class="acts">${actions(r)}</span></div>`;
 }
 
 function renderList() {
+  // Memory redraws on its own 3 s beat; the 2.5 s snapshot must not rebuild it under the mouse
+  if (view === MEM) { if (!$('list').querySelector('.mem')) memory.render(); return; }
   if (view === LOCAL) return renderPorts();
   const rows = visibleRows();
   if (!rows.length) {
     const hidden = snap.entries.filter((r) => inView(r) && matches(r) && !shown(r)).length;
-    $('list').innerHTML = `<div class="empty">${!snap.entries.length ? 'Scanning…' : hidden ? `No project server is running here.<br><span class="faint">${hidden} stopped — tick <b>Show all</b> to see and start them.</span>` : 'Nothing matches.'}</div>`;
+    $('list').innerHTML = `<div class="empty">${!snap.entries.length ? 'Scanning…' : hidden ? `${hidden} stopped — select Show all.` : 'Nothing matches.'}</div>`;
     return;
   }
   const key = (r: Row) => (view.startsWith('r:') ? r.project : view.startsWith('p:') ? '' : r.repo);
   const groups = new Map<string, Row[]>();
   for (const r of rows) groups.set(key(r), [...(groups.get(key(r)) ?? []), r]);
-  let h = '';
+  let h = tableHead(true);
   for (const [title, rs] of groups) {
-    const on = rs.filter((r) => r.status === 'running').length;
-    if (title) h += `<div class="gh"><span>${esc(title)}</span><span class="faint">${on ? `${on} running · ` : ''}${rs.length}</span></div>`;
+    if (title && (rs.length > 1 || title !== rs[0].name)) h += `<div class="gh">${esc(title)}</div>`;
     h += rs.map(rowHtml).join('');
   }
   $('list').innerHTML = h;
+  document.querySelectorAll('.row > span').forEach((cell) => cell.setAttribute('role', 'cell'));
 }
 
-const HEALTH: Record<string, string> = { healthy: 'healthy', unhealthy: 'unhealthy', tcp: 'open · not a web page' };
 function healthText(p: Port) {
   if (p.health === 'healthy') return `HTTP ${p.code}${p.ms != null ? ` · ${p.ms} ms` : ''}`;
   if (p.health === 'unhealthy') return p.code ? `HTTP ${p.code}` : 'no answer';
@@ -187,87 +197,79 @@ function healthText(p: Port) {
 function renderPorts() {
   const rows = snap.ports.filter((p) => matches({ ...p, command: `${p.tool} ${p.args}`, ports: [p.port] }));
   if (!rows.length) {
-    $('list').innerHTML = `<div class="empty">${snap.ports.length ? 'Nothing matches.' : 'No localhost port is open.<br><span class="faint">Start a dev server (npm run dev, python -m http.server…) and it shows up here within 3 seconds.</span>'}</div>`;
+    $('list').innerHTML = `<div class="empty">${snap.ports.length ? 'Nothing matches.' : 'No open ports.'}</div>`;
     return;
   }
-  const bad = rows.filter((p) => p.health === 'unhealthy').length;
-  let h = `<div class="gh"><span>Open on localhost</span><span class="faint">${bad ? `<b class="redt">${bad} unhealthy</b> · ` : ''}${rows.length}</span></div>`;
+  let h = tableHead();
   for (const p of rows) {
     const key = `port:${p.port}`;
     const isArmed = armed === key;
-    h += `<div class="row prow ${selected === key ? 'sel' : ''} h-${p.health}" data-row="${key}">
+    h += `<div role="row" class="row local-grid ${selected === key ? 'sel' : ''} h-${p.health}" data-row="${key}">
       <span class="dot ${p.health}" title="${esc(healthText(p))}"></span>
       <span class="port big">:${p.port}</span>
-      <span class="nm">${esc(p.name)}<span class="tool">${esc(p.tool)}</span></span>
+      <span class="nm">${esc(p.name)}${p.orphan ? `<span class="pill" title="${esc(p.leftBy ? `Left by ${p.leftBy}` : 'Its terminal or editor is gone')}">orphan</span>` : ''}</span>
+      <span class="health ${p.health === 'unhealthy' ? 'redt' : ''}">${p.health === 'unhealthy' ? esc(healthText(p)) : p.health === 'tcp' ? 'tcp' : ''}</span><span class="mem">${p.mb} MB</span><span class="up">${fmtUp(p.secs)}</span>
       <span class="acts">
-        <button class="act" data-open="http://localhost:${p.port}" title="Open http://localhost:${p.port}">↗</button>
-        <button class="act stop ${isArmed ? 'armed' : ''}" data-kill="${p.port}" title="Stop pid ${p.pid}">${isArmed ? 'Stop?' : '■'}</button>
+        <button class="act" data-open="http://localhost:${p.port}" title="Open http://localhost:${p.port}">${openIcon}</button>
+        <button class="act stop ${isArmed ? 'armed' : ''}" data-kill="${p.port}" title="Stop pid ${p.pid}">${isArmed ? 'Stop?' : stopIcon}</button>
       </span>
     </div>`;
   }
   $('list').innerHTML = h;
+  document.querySelectorAll('.row > span').forEach((cell) => cell.setAttribute('role', 'cell'));
 }
 
 function render() {
-  $('allWrap').style.display = view === LOCAL ? 'none' : '';
+  $('allWrap').style.display = view === LOCAL || view === MEM ? 'none' : '';
+  $('app').classList.toggle('memview', view === MEM);
   $<HTMLInputElement>('showAll').checked = showAll;
   $('tLocal').classList.toggle('sel', view === LOCAL);
-  $('tProj').classList.toggle('sel', view !== LOCAL);
-  $('rescan').title = view === LOCAL ? 'Check every port again' : 'Scan the projects folder again';
+  $('tProj').classList.toggle('sel', view !== LOCAL && view !== MEM);
+  $('tMem').classList.toggle('sel', view === MEM);
+  $('rescan').title = view === LOCAL ? 'Check every port again' : view === MEM ? 'Read memory again' : 'Scan the projects folder again';
   const n = stopTargets().length;
   $<HTMLButtonElement>('stopAll').disabled = n === 0;
-  $('stopAll').textContent = n ? `Stop all (${n})` : 'Stop all';
+  $('stopAll').innerHTML = `${stopIcon}<span class="badge">${n}</span>`;
+  $('stopAll').title = `Stop all (${n})`;
+  $('stopAll').setAttribute('aria-label', `Stop all (${n})`);
+  $('tLocal').innerHTML = `Localhost <small>${snap.ports.length}</small>`;
+  $('tProj').innerHTML = `Projects <small>${snap.entries.filter(isOn).length}</small>`;
   renderSide();
   renderList();
   renderDetail();
 }
 
 // ---- detail pane -------------------------------------------------------------------------------------------------
-let logTimer = 0;
-// Click a row → this pane shows everything about it (the row itself stays short); Esc or ✕ closes it.
 function renderDetail() {
   const r = snap.entries.find((e) => e.id === selected);
   const o = snap.ports.find((x) => `port:${x.port}` === selected);
   $('app').classList.toggle('nodetail', !r && !o);
   if (!r && !o) return;
-  const kv = (pairs: [string, unknown][]) => pairs.filter(([, v]) => v !== '' && v != null).map(([k, v]) => `<span>${k}</span><span>${esc(v)}</span>`).join('');
-  const btn = (attr: string, val: string, label: string, title = '') => `<button ${attr}="${esc(val)}" title="${esc(title)}">${label}</button>`;
-  let acts = '';
-  if (r) {
-    const on = isOn(r);
-    const lp = on ? (r.ports[0] ?? null) : null;
-    const lan = lp ? snap.ports.find((x) => x.port === lp)?.lanUrl : null;
-    $('logTitle').innerHTML = `<span class="dot ${r.status}"></span><b>${esc(r.name)}</b><span class="faint">${esc(r.status)}</span>`;
-    $('dInfo').innerHTML = kv([
-      ['Port', r.ports.length ? r.ports.map((p) => `:${p}`).join(' ') : r.port ? `:${r.port}` : ''],
-      ['URL', r.url], ['LAN', lan], ['Command', r.command], ['Folder', r.cwd], ['From', r.file],
-      ['Up', on ? ago(r.secs) : ''], ['Memory', on && r.mb != null ? `${r.mb} MB` : ''], ['PID', on ? r.pid : ''],
-      ['Started by', on ? (r.own ? 'Server Hub' : r.source) : ''], ['Note', r.note],
-    ]);
-    if (r.url && (on || !r.canStart)) acts += btn('data-open', r.url, 'Open', r.url);
-    if (lp) acts += shareBtn(lp);
-    acts += btn('data-folder', r.cwdFull, 'Show in Finder');
-    acts += btn('data-copy', `cd ${r.cwd} && ${r.command}`, 'Copy command');
-    if (on) acts += `<button class="${armed === r.id ? 'armed' : ''}" data-stop="${r.id}">${armed === r.id ? 'Stop?' : 'Stop'}</button>`;
-    else if (r.canStart) acts += btn('data-start', r.id, 'Start');
-  } else if (o) {
-    $('logTitle').innerHTML = `<span class="dot ${o.health}"></span><b>:${o.port} ${esc(o.name)}</b><span class="faint">${esc(o.tool)}</span>`;
-    $('dInfo').innerHTML = kv([
-      ['URL', `http://localhost:${o.port}`], ['Health', `${HEALTH[o.health]} (${healthText(o)})`], ['LAN', o.lanUrl],
-      ['Command', o.args], ['Folder', o.cwd], ['Up', ago(o.secs)], ['Memory', `${o.mb} MB`], ['PID', o.pid], ['Started by', o.source],
-    ]);
-    acts += btn('data-open', `http://localhost:${o.port}`, 'Open');
-    acts += shareBtn(o.port);
-    if (o.cwd && o.cwd !== '/') acts += btn('data-folder', o.cwd, 'Show in Finder');
-    acts += btn('data-copy', `http://localhost:${o.port}`, 'Copy URL');
-    const k = `port:${o.port}`;
-    acts += `<button class="${armed === k ? 'armed' : ''}" data-kill="${o.port}">${armed === k ? 'Stop?' : 'Stop'}</button>`;
-  }
-  $('dActs').innerHTML = acts;
+  const on = r ? isOn(r) : true;
+  const port = o?.port ?? (on ? r?.ports[0] : null);
+  const p = o ?? snap.ports.find((x) => x.port === port);
+  const url = o ? `http://localhost:${o.port}` : r?.url;
+  const name = r?.name ?? o!.name;
+  const problem = p?.health === 'unhealthy' ? healthText(p) : r?.health === 'unhealthy' ? 'no answer' : '';
+  const btn = (attr: string, val: string, label: string, cls = '') => `<button class="${cls}" ${attr}="${esc(val)}">${label}</button>`;
+  $('logTitle').innerHTML = `<b>${esc(name)}</b>${problem ? `<span class="redt">${esc(problem)}</span>` : ''}`;
+  const pairs: [string, unknown][] = [['URL', url], ['Command', r?.command ?? o?.args], ['Folder', r?.cwd ?? o?.cwd], ['PID', on ? r?.pid ?? o?.pid : '—']];
+  if (!logOpen && $('logPane').clientWidth >= 700 && innerHeight >= 500) pairs.push(
+    ['Memory', on ? `${r?.mb ?? o?.mb ?? '—'} MB` : '—'], ['Up', on ? fmtUp(r?.secs ?? o?.secs ?? null) : '—'],
+    ['Started by', r ? (r.own ? 'Server Hub' : r.source || r.kind) : `${o?.source || ''} · ${o?.tool || ''}`], ['From', r?.file || r?.source || r?.kind]);
+  if (o?.orphan) pairs.push(['Left by', o.leftBy || 'gone']);
+  $('dInfo').innerHTML = pairs.filter(([, v]) => v != null && v !== '').map(([k, v]) => `<span>${k}</span><span title="${esc(v)}">${k === 'URL' ? btn('data-open', String(v), esc(v), 'url') : esc(v)}</span>`).join('');
+  let menu = port ? shareBtn(port) : '';
+  const folder = r?.cwdFull ?? o?.cwd;
+  if (folder && folder !== '/') menu += btn('data-folder', folder, 'Show in Finder');
+  menu += r ? btn('data-copy', `cd ${r.cwd} && ${r.command}`, 'Copy command') : btn('data-copy', url!, 'Copy URL');
+  const stop = r ? btn('data-stop', r.id, armed === r.id ? 'Stop?' : 'Stop', 'text-stop') : btn('data-kill', String(o!.port), armed === selected ? 'Stop?' : 'Stop', 'text-stop');
+  $('dActs').innerHTML = `${url && (on || !r?.canStart) ? btn('data-open', url, 'Open') : ''}<span class="menu-wrap"><button id="moreBtn" aria-label="More actions" aria-expanded="${menuOpen}">…</button><div id="detailMenu" class="popover" ${menuOpen ? '' : 'hidden'}>${menu}</div></span>${on ? stop : r?.canStart ? btn('data-start', r.id, 'Start', 'text-start') : ''}`;
+  $('logToggle').textContent = `${logOpen ? '▾' : '▸'} Log`;
+  $('logToggle').setAttribute('aria-expanded', String(logOpen));
+  $('logPane').classList.toggle('nolog', !logOpen);
 }
 
-// No log to show → the info column takes the whole pane.
-const noLog = (on: boolean) => $('logPane').classList.toggle('nolog', on);
 async function loadLog() {
   const pre = $('log');
   const o = snap.ports.find((x) => `port:${x.port}` === selected);
@@ -277,12 +279,10 @@ async function loadLog() {
     return;
   }
   if (o && !r?.own) {
-    noLog(true);
     pre.textContent = `No log here: it lives in the window that started this server (${o.source || 'another app'}).\n\nServer Hub keeps logs only for servers it starts itself (Projects → ▶).`;
     return;
   }
   const l = await call<{ lines: string[]; own: boolean }>('logs', { id: r!.id }).catch(() => ({ lines: [], own: false }));
-  noLog(!l.lines.length);
   if (l.lines.length) {
     const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 30;
     pre.innerHTML = l.lines.map((s) => `<span class="${/error|fail|exception|EADDRINUSE/i.test(s) ? 'lr' : /ready|local:|listening|started|compiled/i.test(s) ? 'lg' : ''}">${esc(s)}</span>`).join('\n');
@@ -295,6 +295,7 @@ async function loadLog() {
 }
 
 function select(key: string | null) {
+  menuOpen = false;
   selected = key;
   armed = null;
   renderList();
@@ -353,6 +354,10 @@ async function open(target: string, app?: string) {
 
 document.addEventListener('click', (ev) => {
   const t = ev.target as HTMLElement;
+  if (t.closest('#moreBtn')) { menuOpen = !menuOpen; renderDetail(); return; }
+  if (t.closest('#logToggle')) { logOpen = !logOpen; store.set('hub.log', logOpen ? '1' : '0'); renderDetail(); loadLog(); return; }
+  if (menuOpen && !t.closest('.menu-wrap')) { menuOpen = false; renderDetail(); }
+
   const fold = t.closest<HTMLElement>('[data-fold]');
   if (fold) {
     ev.stopPropagation();
@@ -378,7 +383,7 @@ document.addEventListener('click', (ev) => {
   if (b) {
     ev.stopPropagation();
     const d = b.dataset;
-    if (d.view != null) { setView(d.view); selected = null; render(); loadLog(); }
+    if (d.view != null) { if (view === MEM && d.view !== MEM) memory.leave(); setView(d.view); selected = null; render(); loadLog(); if (view === MEM) memory.load(); }
     else if (d.start) start(d.start);
     else if (d.stop) stop(d.stop);
     else if (d.kill) stop(`port:${d.kill}`);
@@ -412,6 +417,7 @@ document.addEventListener('keydown', (ev) => {
     return;
   }
   if (ev.key === 'Escape') {
+    if (menuOpen) { menuOpen = false; renderDetail(); return; }
     if ($('addOv').classList.contains('show')) return closeAdd();
     if ($('saOv').classList.contains('show')) return closeStopAll();
     if (!(ev.target as HTMLElement).matches('input') && selected) return select(null);
@@ -441,7 +447,7 @@ document.addEventListener('keydown', (ev) => {
   }
 });
 
-$('q').addEventListener('input', () => renderList());
+$('q').addEventListener('input', () => (view === MEM ? memory.render() : renderList()));
 $('sideBtn').addEventListener('click', () => setSide($('app').classList.contains('noside')));
 $('showAll').addEventListener('change', () => {
   showAll = $<HTMLInputElement>('showAll').checked;
@@ -449,6 +455,7 @@ $('showAll').addEventListener('change', () => {
   render();
 });
 $('rescan').addEventListener('click', async () => {
+  if (view === MEM) return void memory.load();
   await refresh(true);
   toast(view === LOCAL ? `${snap.ports.length} ports open, ${snap.unhealthy} unhealthy` : `Scanned ${snap.root}: ${snap.entries.length} items`);
 });
@@ -580,6 +587,17 @@ $('addForm').addEventListener('submit', async (ev) => {
   }
 });
 
+const memory = createMemory(() => $('list'), {
+  toast,
+  query: () => $<HTMLInputElement>('q').value || '',
+  get: store.get,
+  set: store.set,
+  active: () => view === MEM,
+  badge: (n) => {
+    $('tMem').innerHTML = `Memory${n ? ` <span class="rbadge" title="${n} orphan${n > 1 ? 's' : ''}">${n}</span>` : ''}`;
+  },
+});
+
 refresh(true);
 setInterval(() => { if (!document.hidden) refresh(); }, 2500);
 setInterval(() => {
@@ -587,3 +605,5 @@ setInterval(() => {
   if (r && (r.own || r.status === 'starting')) loadLog();
 }, 1000);
 loadLog();
+
+window.addEventListener('resize', renderDetail);

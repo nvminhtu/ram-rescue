@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+- **Memory tab.** Every app and background process by RAM, apps grouped with their helpers (`Google Chrome · 45`),
+  a RAM bar with memory pressure, filters **High / Medium / Low / All**, **Hide system** on by default. Quit asks first
+  and shows how much it frees; Force Quit for apps that hang; tick several rows to quit them together.
+- **Orphans.** Dev processes left behind when their terminal, editor or agent closed (vite, tsc --watch, Playwright
+  Chromium, claude/codex CLIs). Own filter with **Left by** and **Quit all**, a red count on the Memory tab, and an
+  `orphan` tag on the Localhost tab.
+- **Native macOS table look.** Column headers (Port · Name · Mem · Up), compact striped rows, blue selection; healthy rows
+  show no text, only problems (HTTP 500) in red. Row buttons appear only on hover or for the selected row.
+- **Less clutter.** Detail panel keeps one Open button, a … menu (Share on LAN, Show in Finder, Copy) and Stop; the log is
+  folded behind **▸ Log** until you open it. Projects no longer repeat a folder name above its single project.
+- **Dark mode** follows macOS.
+
 ## 0.2.2
 
 - **Plain macOS look.** White window, light gray toolbar and sidebar, system font and colors — no more dark terminal theme.

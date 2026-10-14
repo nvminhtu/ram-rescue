@@ -25,6 +25,13 @@ export interface Port {
   health: Health; code: number | null; ms: number | null; rowId: string | null;
   /** open = other devices on the LAN can already reach it · shared = through Server Hub's relay · null = this Mac only */
   lan: 'open' | 'shared' | null; lanUrl: string | null;
+  /** its terminal / editor / agent is gone (parent is launchd) */
+  orphan: boolean; leftBy: string | null;
 }
+export interface MemGroup {
+  id: string; name: string; kind: 'App' | 'Background' | 'Dev' | 'System'; pids: number[]; count: number; mb: number;
+  cpu: number; secs: number; ports: number[]; system: boolean; orphan: boolean; leftBy: string | null;
+}
+export interface MemSnap { total: number; used: number; pressure: 'normal' | 'warning' | 'critical'; groups: MemGroup[] }
 export interface Outside { pid: number; name: string; cwd: string; args: string; ports: number[]; mb: number; secs: number; source: string }
 export interface Snapshot { root: string; roots: { path: string; exists: boolean }[]; rootExists: boolean; entries: Row[]; outside: Outside[]; ports: Port[]; unhealthy: number; running: number; lanIp: string | null }

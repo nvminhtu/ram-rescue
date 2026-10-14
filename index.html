@@ -10,18 +10,18 @@
   <header class="top" data-tauri-drag-region>
     <button id="sideBtn" class="icon" title="Show / hide sidebar (⌘B)">☰</button>
     <b class="brand" data-tauri-drag-region>Server Hub</b>
-    <div class="tabs"><button id="tLocal" data-view="__localhost__">Localhost</button><button id="tProj" data-view="all">Projects</button></div>
+    <div class="tabs"><button id="tLocal" data-view="__localhost__">Localhost</button><button id="tProj" data-view="all">Projects</button><button id="tMem" data-view="__memory__">Memory</button></div>
     <span class="grow" data-tauri-drag-region></span>
     <label class="chk" id="allWrap" title="Also list projects that are not running"><input type="checkbox" id="showAll"> Show all</label>
-    <div class="search"><input id="q" type="search" placeholder="Search  ⌘K" spellcheck="false"></div>
     <button id="rescan" class="icon" title="Scan again">↻</button>
     <button id="addBtn" class="icon" title="Add a server by hand">＋</button>
-    <button id="stopAll" title="Stop every running server (asks first)">Stop all</button>
+    <button id="stopAll" class="icon" title="Stop every running server (asks first)">Stop all</button>
+    <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search  ⌘K" spellcheck="false"></div>
   </header>
   <aside class="side" id="side"></aside>
-  <main class="main"><div id="list"></div></main>
+  <main class="main"><div id="list" role="table" aria-label="Servers"></div></main>
   <section class="log" id="logPane">
-    <div class="lh"><span id="logTitle"></span><span class="grow"></span><span class="dacts" id="dActs"></span><button class="icon x" data-close title="Close (Esc)">✕</button></div>
+    <div class="lh"><span id="logTitle"></span><span class="grow"></span><button class="icon" id="logToggle" aria-expanded="false">▸ Log</button><span class="dacts" id="dActs"></span><button class="icon x" data-close title="Close (Esc)">✕</button></div>
     <div class="dbody"><div class="kv" id="dInfo"></div><pre id="log"></pre></div>
   </section>
 </div>
