@@ -55,8 +55,8 @@ fn tray_menu(app: &AppHandle, snap: &Value) -> tauri::Result<Menu<tauri::Wry>> {
     if !rows.is_empty() {
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
-    menu.append(&MenuItem::with_id(app, "open", "Open Server Hub", true, None::<&str>)?)?;
-    menu.append(&MenuItem::with_id(app, "quit", "Quit Server Hub", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "open", "Open RAM Rescue", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "Quit RAM Rescue", true, None::<&str>)?)?;
     Ok(menu)
 }
 
@@ -71,7 +71,7 @@ pub fn run() {
             let tray = TrayIconBuilder::with_id("hub")
                 .icon(app.default_window_icon().cloned().expect("app icon"))
                 .title(tray_title(&snap))
-                .tooltip("Server Hub")
+                .tooltip("RAM Rescue")
                 .menu(&tray_menu(&handle, &snap)?)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, ev| {

@@ -194,7 +194,10 @@ pub fn group(t: &HashMap<i32, MProc>, me: u32, ports: &HashMap<i32, BTreeSet<u16
         let system = is_system_proc(p, me);
         let orphan = !system && is_orphan(p, me);
         let bundle = bundle_of(&p.exe).filter(|_| !orphan);
+        // every daemon inside a booted iOS runtime (routined, pasted, photoanalysisd…) is one "iOS Simulator" row
+        let sim = !system && p.exe.contains("/CoreSimulator/");
         let (id, name, kind) = match bundle {
+            _ if sim => ("sim".to_string(), "iOS Simulator".to_string(), "App"),
             _ if system => (bundle.map(|b| format!("b:{b}")).unwrap_or(format!("p:{}", p.pid)), bundle.map(stem).unwrap_or(&short_name(p)).to_string(), "System"),
             Some(b) => {
                 let name = procs::starter(&p.exe).filter(|_| !in_applications(b)).map(str::to_string).unwrap_or_else(|| stem(b).to_string());
@@ -262,6 +265,8 @@ mod tests {
   700     1   700   501  30000  0.0    03:00:00 /opt/homebrew/bin/redis-server
   800     1   800   501   3000  0.0    03:00:00 /Users/me/.codex/bin/Updater
   900     1   900   501  90000  0.0    03:00:00 /Users/me/.local/bin/claude
+  950   949   950   501  36000  0.0    07:00 /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/usr/libexec/routined
+  951   949   951   501  52000  0.0    07:00 /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/PrivateFrameworks/Pasteboard.framework/Support/pasted
 ";
 
     fn t() -> HashMap<i32, MProc> {
@@ -329,6 +334,8 @@ mod tests {
         assert_eq!((dev.kind, dev.name.as_str()), ("Dev", "node server"));
         assert!(g.iter().find(|g| g.pids == vec![500]).unwrap().system);
         assert!(g[0].kb >= g[1].kb, "sorted by memory");
+        let sim = g.iter().find(|g| g.name == "iOS Simulator").unwrap();
+        assert_eq!((sim.pids.clone(), sim.kind, sim.system), (vec![950, 951], "App", false));
         assert!(group(&t, 501, &ports, &[100, 101], &left).iter().all(|g| g.name != "Google Chrome"), "protected pids hidden");
     }
 }

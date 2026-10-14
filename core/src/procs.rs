@@ -151,8 +151,8 @@ pub fn source(pid: i32, table: &HashMap<i32, Proc>) -> String {
 pub fn starter(exe: &str) -> Option<&'static str> {
     let l = exe.to_lowercase();
     let base = l.rsplit('/').next().unwrap_or(&l);
-    Some(if l.contains("server-hub") || l.contains("server hub") {
-        "Server Hub"
+    Some(if l.contains("server-hub") || l.contains("server hub") || l.contains("ram rescue") {
+        "RAM Rescue"
     } else if base == "claude" || l.contains("/claude-code") || l.contains("claude.app/") {
         "Claude Code"
     } else if base == "codex" || l.contains("codex") {

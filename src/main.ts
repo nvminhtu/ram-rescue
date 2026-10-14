@@ -20,7 +20,7 @@ const store = {
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private window */ } },
 };
 const collapsed = new Set<string>(JSON.parse(store.get('hub.collapsed') || '[]'));
-view = store.get('hub.view') || LOCAL;
+view = store.get('hub.view') || MEM;
 if (view === '__outside__') view = LOCAL;
 function setView(v: string) { view = v; store.set('hub.view', v); }
 // Sidebar starts closed; the Localhost / Projects tabs in the top bar are enough to move around.
@@ -135,7 +135,7 @@ function actions(r: Row) {
   if (r.url && (on || !r.canStart)) h += `<button class="act" data-open="${esc(r.url)}" title="Open ${esc(r.url)}">${openIcon}</button>`;
   if (on) {
     const isArmed = armed === r.id;
-    h += `<button class="act stop ${isArmed ? 'armed' : ''}" data-stop="${r.id}" title="${r.own ? 'Stop' : `Stop (started by ${esc(r.source)})`}">${isArmed ? 'Stop?' : stopIcon}</button>`;
+    h += `<button class="act stop ${isArmed ? 'armed' : ''}" data-stop="${r.id}" title="${r.own ? 'Stop' : `Stop (started by ${esc(r.source)})`}">${isArmed ? 'Stop?' : 'Stop'}</button>`;
   } else if (r.canStart) {
     h += `<button class="act play" data-start="${r.id}" ${b ? 'disabled' : ''} title="Start">${b ? '…' : 'Start'}</button>`;
   }
@@ -168,7 +168,7 @@ function rowHtml(r: Row) {
 
 function renderList() {
   // Memory redraws on its own 3 s beat; the 2.5 s snapshot must not rebuild it under the mouse
-  if (view === MEM) { if (!$('list').querySelector('.mem')) memory.render(); return; }
+  if (view === MEM) { if (!$('list').querySelector('.memtab')) memory.render(); return; }
   if (view === LOCAL) return renderPorts();
   const rows = visibleRows();
   if (!rows.length) {
@@ -211,7 +211,7 @@ function renderPorts() {
       <span class="health ${p.health === 'unhealthy' ? 'redt' : ''}">${p.health === 'unhealthy' ? esc(healthText(p)) : p.health === 'tcp' ? 'tcp' : ''}</span><span class="mem">${p.mb} MB</span><span class="up">${fmtUp(p.secs)}</span>
       <span class="acts">
         <button class="act" data-open="http://localhost:${p.port}" title="Open http://localhost:${p.port}">${openIcon}</button>
-        <button class="act stop ${isArmed ? 'armed' : ''}" data-kill="${p.port}" title="Stop pid ${p.pid}">${isArmed ? 'Stop?' : stopIcon}</button>
+        <button class="act stop ${isArmed ? 'armed' : ''}" data-kill="${p.port}" title="Stop pid ${p.pid}">${isArmed ? 'Stop?' : 'Stop'}</button>
       </span>
     </div>`;
   }
@@ -256,7 +256,7 @@ function renderDetail() {
   const pairs: [string, unknown][] = [['URL', url], ['Command', r?.command ?? o?.args], ['Folder', r?.cwd ?? o?.cwd], ['PID', on ? r?.pid ?? o?.pid : '—']];
   if (!logOpen && $('logPane').clientWidth >= 700 && innerHeight >= 500) pairs.push(
     ['Memory', on ? `${r?.mb ?? o?.mb ?? '—'} MB` : '—'], ['Up', on ? fmtUp(r?.secs ?? o?.secs ?? null) : '—'],
-    ['Started by', r ? (r.own ? 'Server Hub' : r.source || r.kind) : `${o?.source || ''} · ${o?.tool || ''}`], ['From', r?.file || r?.source || r?.kind]);
+    ['Started by', r ? (r.own ? 'RAM Rescue' : r.source || r.kind) : `${o?.source || ''} · ${o?.tool || ''}`], ['From', r?.file || r?.source || r?.kind]);
   if (o?.orphan) pairs.push(['Left by', o.leftBy || 'gone']);
   $('dInfo').innerHTML = pairs.filter(([, v]) => v != null && v !== '').map(([k, v]) => `<span>${k}</span><span title="${esc(v)}">${k === 'URL' ? btn('data-open', String(v), esc(v), 'url') : esc(v)}</span>`).join('');
   let menu = port ? shareBtn(port) : '';
@@ -279,7 +279,7 @@ async function loadLog() {
     return;
   }
   if (o && !r?.own) {
-    pre.textContent = `No log here: it lives in the window that started this server (${o.source || 'another app'}).\n\nServer Hub keeps logs only for servers it starts itself (Projects → ▶).`;
+    pre.textContent = `No log here: it lives in the window that started this server (${o.source || 'another app'}).\n\nRAM Rescue keeps logs only for servers it starts itself (Projects → ▶).`;
     return;
   }
   const l = await call<{ lines: string[]; own: boolean }>('logs', { id: r!.id }).catch(() => ({ lines: [], own: false }));
@@ -288,7 +288,7 @@ async function loadLog() {
     pre.innerHTML = l.lines.map((s) => `<span class="${/error|fail|exception|EADDRINUSE/i.test(s) ? 'lr' : /ready|local:|listening|started|compiled/i.test(s) ? 'lg' : ''}">${esc(s)}</span>`).join('\n');
     if (atBottom) pre.scrollTop = pre.scrollHeight;
   } else if (r!.status === 'running') {
-    pre.textContent = `Started by ${r!.source || 'another app'}, so its log lives there.\n\nStop it and press ▶ here to see the log in Server Hub.`;
+    pre.textContent = `Started by ${r!.source || 'another app'}, so its log lives there.\n\nStop it and press ▶ here to see the log in RAM Rescue.`;
   } else {
     pre.textContent = `Press ▶ (or Space) to start.`;
   }
@@ -535,7 +535,7 @@ function renderStopAll() {
   const line = (dot: string, name: string, ports: number[], by: string) =>
     `<div class="sa-row"><span class="dot ${dot}"></span><span class="mono">${esc(name)}</span><span class="mono faint">${ports.map((p) => ':' + p).join(' ')}</span><span class="faint">${esc(by)}</span></div>`;
   $('saList').innerHTML =
-    rows.map((r) => line('running', r.name, r.ports.length ? r.ports : r.port ? [r.port] : [], r.own ? 'Server Hub' : r.source ? `by ${r.source}` : '')).join('') +
+    rows.map((r) => line('running', r.name, r.ports.length ? r.ports : r.port ? [r.port] : [], r.own ? 'RAM Rescue' : r.source ? `by ${r.source}` : '')).join('') +
     out.map((o) => line('outside', o.name, o.ports, `by ${o.source}`)).join('') ||
     '<div class="sa-row"><span></span><span class="faint">No project server is running.</span></div>';
   $('saOutWrap').style.display = snap.outside.length ? '' : 'none';

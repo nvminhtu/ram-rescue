@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Server Hub on your Mac, sign it with your Developer ID, notarize it with Apple and upload it to the GitHub release
+# Build RAM Rescue on your Mac, sign it with your Developer ID, notarize it with Apple and upload it to the GitHub release
 # of the version in package.json. Releases are made only this way; the GitHub Actions workflow is manual-only.
 #   ./scripts/release-signed.sh
 # Needs: a "Developer ID Application" certificate in your keychain, Xcode command line tools, Node, Rust, gh (logged in).
@@ -7,12 +7,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO=nvminhtu/server-hub
+REPO=nvminhtu/ram-rescue
 VERSION=$(node -p "require('./package.json').version")
 TAG="v$VERSION"
 PROFILE="${NOTARY_PROFILE:-server-hub}"
-APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/Server Hub.app"
-DMG=Server-Hub-mac.dmg
+APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/RAM Rescue.app"
+DMG=RAM-Rescue-mac.dmg
 
 IDENTITY="${APPLE_SIGNING_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
 if [ -z "$IDENTITY" ]; then
@@ -41,7 +41,7 @@ codesign --verify --deep --strict --verbose=1 "$APP"
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/" && ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -volname "Server Hub" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "RAM Rescue" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 codesign --force --sign "$IDENTITY" --timestamp "$DMG"
 
@@ -60,8 +60,8 @@ if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
 else
   NOTES=$(mktemp)
   awk -v h="## $VERSION" '$0==h{f=1;next} /^## /{f=0} f' CHANGELOG.md > "$NOTES"
-  printf '\nSigned with Developer ID and notarized by Apple — open the .dmg, drag Server Hub to Applications.\n' >> "$NOTES"
-  gh release create "$TAG" "$DMG" SHA256SUMS.txt -R "$REPO" --target main --title "Server Hub $VERSION" --notes-file "$NOTES"
+  printf '\nSigned with Developer ID and notarized by Apple — open the .dmg, drag RAM Rescue to Applications.\n' >> "$NOTES"
+  gh release create "$TAG" "$DMG" SHA256SUMS.txt -R "$REPO" --target main --title "RAM Rescue $VERSION" --notes-file "$NOTES"
 fi
 echo "✓ Signed + notarized $DMG is live: https://github.com/$REPO/releases/tag/$TAG"
 cat SHA256SUMS.txt

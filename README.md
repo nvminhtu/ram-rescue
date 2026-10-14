@@ -1,22 +1,25 @@
-<p align="center"><img src="icon.png" width="96" alt="Server Hub icon"></p>
+<p align="center"><img src="icon.png" width="96" alt="RAM Rescue icon"></p>
 
-<h1 align="center">Server Hub</h1>
+<h1 align="center">RAM Rescue</h1>
 
-<p align="center"><b>See every localhost server on your Mac — and whether it actually works.</b><br>
-Free and open source (MIT) for macOS · Apple silicon & Intel · signed & notarized by Apple · no account · nothing leaves your network</p>
+<p align="center"><b>Find what is eating your Mac's memory — and quit it in one click.</b><br>
+Plus every localhost server and whether it works. Free and open source (MIT) for macOS · Apple silicon & Intel ·
+signed & notarized by Apple · no account · nothing leaves your Mac</p>
 
 <p align="center">
-  <a href="https://github.com/nvminhtu/server-hub/releases/latest/download/Server-Hub-mac.dmg"><b>⬇ Download for Mac</b></a> ·
+  <a href="https://github.com/nvminhtu/ram-rescue/releases/latest/download/RAM-Rescue-mac.dmg"><b>⬇ Download for Mac</b></a> ·
   <a href="#install">Install</a> ·
   <a href="#faq">FAQ</a> ·
-  <a href="https://github.com/nvminhtu/server-hub/releases">Releases</a>
+  <a href="https://github.com/nvminhtu/ram-rescue/releases">Releases</a>
 </p>
 
-Running a frontend, an API, a CMS and a docs site at the same time? Server Hub shows every port open on
-localhost, sends each one a quick HTTP request, and tells you which ones are **healthy**, which are **broken**
-(5xx or no answer) and which aren't web servers at all. You can open, stop or find the folder of any of them in one click,
-and start your projects with ▶. No more `lsof -i :3000`, no more digging through terminal tabs to find which one
-holds port 5173.
+Mac slow, fans loud, "memory pressure" in the yellow? RAM Rescue opens on the **Memory** tab: the apps using the most RAM
+are big cards at the top (Chrome with its 45 helpers counted as one app), each with a large **Quit** button and how much
+it frees. Dev processes left behind by a closed terminal, editor or AI agent — **orphans** — get their own list and a
+**Quit all**. The **Localhost** and **Projects** tabs show every dev server on your Mac, whether it answers, and let you
+start or stop it.
+
+<sub>Formerly **RAM Rescue** (until 0.3.0). Your settings carry over.</sub>
 
 ![Localhost view: every open port with its health check, uptime, memory and who started it](docs/localhost.jpg)
 
@@ -62,13 +65,13 @@ Each row stays short: status dot, port, project name, **↗** open in the browse
 - the **project folder name** and the **tool** behind it: vite, next, astro, nuxt, webpack, http.server, uvicorn,
   django, rails, angular and others
 - **uptime** and **memory**
-- **who started it**: Terminal, iTerm, Warp, Ghostty, VS Code, Cursor, Xcode, Claude Code, Codex, or Server Hub itself
+- **who started it**: Terminal, iTerm, Warp, Ghostty, VS Code, Cursor, Xcode, Claude Code, Codex, or RAM Rescue itself
 - the command, folder and PID
 - buttons: **Open** · **Share on LAN** · **Show in Finder** · **Copy URL** · **Stop**
 
 `Esc` or **✕** closes the panel.
 
-Server Hub never stops macOS system processes.
+RAM Rescue never stops macOS system processes.
 
 ### Projects — start and stop what you build
 
@@ -76,20 +79,20 @@ Server Hub never stops macOS system processes.
 
 - **Only what runs, by default.** The list and the sidebar show running projects only, so a folder with 30 projects
   doesn't bury the 3 you are using. Tick **Show all** in the top bar to see every project, stopped ones included
-  (Server Hub remembers the choice).
-- **Add one or more project folders** (`~/code`, `~/work`, `~/Developer`…). Server Hub finds everything that can
+  (RAM Rescue remembers the choice).
+- **Add one or more project folders** (`~/code`, `~/work`, `~/Developer`…). RAM Rescue finds everything that can
   run inside them:
   - `package.json` with a `dev` or `start` script that starts a server (vite, next, astro, node, webpack…)
   - `.claude/launch.json` (the file Claude Code uses to start dev servers)
   - `run.sh`
 - **▶ Start** runs the command in the right folder, using the same `PATH` as your terminal (Homebrew, nvm, fnm, volta…).
   **■ Stop** shuts down the whole process group, so npm, vite and esbuild all exit together.
-- **Live log** for everything you start from Server Hub, in the detail panel next to the project's info: the last
+- **Live log** for everything you start from RAM Rescue, in the detail panel next to the project's info: the last
   2,000 lines, with errors in red and "ready" lines in green.
 - **Health in the list:** a project that is running but returns 5xx gets a red dot.
 - **Port clash warning** when two projects want the same port, with the name of whoever holds it.
 - **■ Stop all** asks first and lists every server it will stop.
-- **+ Add** a server by hand (name, folder, command, port) for anything Server Hub can't detect.
+- **+ Add** a server by hand (name, folder, command, port) for anything RAM Rescue can't detect.
 
 ### Memory — what eats RAM, and what was left behind
 
@@ -105,7 +108,7 @@ A third tab lists every app and background process by memory, so you can quit th
   Tick several rows to quit them in one go.
 - **Orphans:** dev processes whose terminal, editor or agent is gone — a `vite` started by Claude Code, a Playwright
   Chromium after a test run, a `tsc --watch` from a closed VS Code. Their parent is now `launchd`, so nothing will ever stop
-  them. The **Orphans** filter lists them with **Left by** (who started them, when Server Hub saw it) and **Quit all**;
+  them. The **Orphans** filter lists them with **Left by** (who started them, when RAM Rescue saw it) and **Quit all**;
   the Memory tab shows a red count while there are any. On the Localhost tab such a server gets a grey `orphan` tag.
   Apps from the Dock and `brew services` are never counted as orphans.
 
@@ -113,27 +116,27 @@ A third tab lists every app and background process by memory, so you can quit th
 
 The menu bar shows how many ports are open, e.g. `6`, or `6 · 1!` when one of them is unhealthy. Click it to see every
 port with its status dot and open one in the browser, or stop a running project. If you close the window,
-Server Hub keeps running in the menu bar. Quit it from the menu bar icon.
+RAM Rescue keeps running in the menu bar. Quit it from the menu bar icon.
 
 ## Download
 
 | Platform | File | Size |
 |---|---|---|
-| **macOS 11 Big Sur or later**, Apple silicon & Intel (universal) | [Server-Hub-mac.dmg](https://github.com/nvminhtu/server-hub/releases/latest/download/Server-Hub-mac.dmg) | ~6 MB |
+| **macOS 11 Big Sur or later**, Apple silicon & Intel (universal) | [RAM-Rescue-mac.dmg](https://github.com/nvminhtu/ram-rescue/releases/latest/download/RAM-Rescue-mac.dmg) | ~6 MB |
 
 This link always downloads the newest version. Older versions and checksums (`SHA256SUMS.txt`) are on the
-[Releases](https://github.com/nvminhtu/server-hub/releases) page. To check your download:
+[Releases](https://github.com/nvminhtu/ram-rescue/releases) page. To check your download:
 
 ```bash
-shasum -a 256 ~/Downloads/Server-Hub-mac.dmg
+shasum -a 256 ~/Downloads/RAM-Rescue-mac.dmg
 ```
 
 ## Install
 
-1. Open **Server-Hub-mac.dmg** and drag **Server Hub** onto the **Applications** folder.
-2. Open **Server Hub** from Applications. That's it.
+1. Open **RAM-Rescue-mac.dmg** and drag **RAM Rescue** onto the **Applications** folder.
+2. Open **RAM Rescue** from Applications. That's it.
 
-Server Hub is signed with a Developer ID and notarized by Apple (since 0.2.1), so it opens without a warning.
+RAM Rescue is signed with a Developer ID and notarized by Apple (since 0.2.1), so it opens without a warning.
 Using an older version (0.2.0 or earlier) and macOS blocks it? Go to **System Settings → Privacy & Security** and click
 **Open Anyway**, or just download the newest version.
 
@@ -156,7 +159,7 @@ the source code is open — see [Build from source](#build-from-source).
 **Check it yourself** after installing:
 
 ```bash
-spctl -a -vv "/Applications/Server Hub.app"
+spctl -a -vv "/Applications/RAM Rescue.app"
 ```
 
 You should see `accepted` and `source=Notarized Developer ID`.
@@ -165,7 +168,7 @@ You should see `accepted` and `source=Notarized Developer ID`.
 
 ![First launch: the Localhost list works right away; add your projects folder to start and stop projects](docs/start.jpg)
 
-1. **Open Server Hub.** The **Localhost** list works right away; there's nothing to set up.
+1. **Open RAM Rescue.** The **Localhost** list works right away; there's nothing to set up.
 2. **Add your projects folder.** Open the sidebar (**☰** or `⌘B`), click **+ Add projects folder…** and pick the folder that holds your
    projects, e.g. `~/code`. If you keep projects in several places, use **+ Add folder** at the bottom of the
    sidebar to add more.
@@ -180,25 +183,25 @@ the folder's projects just leave the list.
 
 Want to open your dev site on your phone, or show it to a teammate on the same Wi-Fi? Click a running row, then **Share on LAN** in the detail panel.
 
-- If the server already listens on every address (`*:8080`), Server Hub copies its LAN link, e.g. `http://192.168.1.20:8080`.
-- If it listens on `127.0.0.1` only (vite, next dev and most dev servers do by default), Server Hub opens a small relay on
+- If the server already listens on every address (`*:8080`), RAM Rescue copies its LAN link, e.g. `http://192.168.1.20:8080`.
+- If it listens on `127.0.0.1` only (vite, next dev and most dev servers do by default), RAM Rescue opens a small relay on
   port + 10000 and copies that link: `5173 → http://192.168.1.20:15173`.
 - The button turns blue (**Shared on LAN** / **On LAN**) and the link is shown under **LAN** in the panel. Click it twice to stop sharing.
-- Relays close by themselves when the server stops or when you quit Server Hub. Nothing is exposed to the internet:
+- Relays close by themselves when the server stops or when you quit RAM Rescue. Nothing is exposed to the internet:
   only devices on your local network can connect.
-- The first time, macOS may ask whether Server Hub may accept incoming connections. Click **Allow**.
+- The first time, macOS may ask whether RAM Rescue may accept incoming connections. Click **Allow**.
 
 ## How it works
 
 - **Ports:** `lsof` lists the TCP ports in LISTEN state; `ps` gives the process, its folder, uptime and memory.
-- **Health check:** Server Hub opens a connection to `127.0.0.1:<port>` (or `[::1]`), sends `HEAD /` and reads the
+- **Health check:** RAM Rescue opens a connection to `127.0.0.1:<port>` (or `[::1]`), sends `HEAD /` and reads the
   status line. The timeout is 0.7 s and each result is reused for 4 s, so it stays light even with dozens of ports.
-- **Who started it:** Server Hub walks up the process tree until it finds a known app (Terminal, VS Code…).
-  If the starting terminal was closed, the process belongs to `launchd`; Server Hub remembers who started it while it
+- **Who started it:** RAM Rescue walks up the process tree until it finds a known app (Terminal, VS Code…).
+  If the starting terminal was closed, the process belongs to `launchd`; RAM Rescue remembers who started it while it
   could still see the parent, and shows it as **Left by**.
 - **Memory:** `ps` gives each process's resident memory and CPU; processes inside one `.app` bundle are summed. Memory used
   comes from `vm_stat` (app + wired + compressed) and the pressure from `kern.memorystatus_vm_pressure_level`.
-- **Finding projects:** Server Hub scans your folders up to 10 levels deep and skips `node_modules`, `.git`, `dist`,
+- **Finding projects:** RAM Rescue scans your folders up to 10 levels deep and skips `node_modules`, `.git`, `dist`,
   `build`, `target`, `Pods` and similar folders. Projects that sit directly inside a folder are grouped under that folder's name.
 
 ## Keyboard shortcuts
@@ -214,7 +217,7 @@ Want to open your dev site on your phone, or show it to a teammate on the same W
 
 ## Privacy
 
-Server Hub runs only on your Mac.
+RAM Rescue runs only on your Mac.
 
 - It reads the list of listening ports and processes (`lsof`, `ps`) and the project files in the folders **you** add.
 - Health checks go **only to localhost**.
@@ -233,10 +236,10 @@ Yes. The download is a universal app for Apple silicon and Intel, macOS 11 or la
 
 **Why isn't it on the Mac App Store?**
 Mac App Store apps run in a sandbox that doesn't allow starting or stopping other programs, and that's the core job of
-Server Hub.
+RAM Rescue.
 
 **A port I know is running doesn't show up.**
-Server Hub hides macOS system services and ordinary apps (Spotify, Dropbox…) that happen to open a port. Dev runtimes
+RAM Rescue hides macOS system services and ordinary apps (Spotify, Dropbox…) that happen to open a port. Dev runtimes
 (node, python, ruby, java, php, go, deno, bun…) and anything inside your project folders are always shown. Press
 **↻ Refresh** if it was started a second ago.
 
@@ -245,31 +248,31 @@ An HTTP status of 500 or higher, or an open port that doesn't answer within 0.7 
 the server answered; it just has nothing at `/`.
 
 **Can I see the log of a server I started in Terminal?**
-No. The log lives in the window that started it. Stop the server there, then start it with ▶ in Server Hub; from then on
-Server Hub shows its log.
+No. The log lives in the window that started it. Stop the server there, then start it with ▶ in RAM Rescue; from then on
+RAM Rescue shows its log.
 
 **My project isn't detected.**
-Server Hub looks for `package.json` `dev` / `start` scripts that start a server, `.claude/launch.json` and `run.sh`. For
+RAM Rescue looks for `package.json` `dev` / `start` scripts that start a server, `.claude/launch.json` and `run.sh`. For
 anything else, use **+ Add** and type the folder, the command and the port.
 
 **Is it safe to press Stop?**
 ■ sends the normal "please quit" signal (SIGTERM), then force-quits after 3 seconds if the process is still running,
-just like pressing Ctrl+C in a terminal. Server Hub refuses to stop macOS system processes.
+just like pressing Ctrl+C in a terminal. RAM Rescue refuses to stop macOS system processes.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | macOS says the app can't be opened | Download the newest version (signed + notarized). Older builds: System Settings → Privacy & Security → **Open Anyway**. |
-| ▶ Start fails with "command not found" | Server Hub uses your login shell's `PATH`. Make sure the tool (npm, pnpm, python…) works in a **new** Terminal window, then quit and reopen Server Hub. |
+| ▶ Start fails with "command not found" | RAM Rescue uses your login shell's `PATH`. Make sure the tool (npm, pnpm, python…) works in a **new** Terminal window, then quit and reopen RAM Rescue. |
 | "port 5173 is already in use by pid …" | Something else already holds that port. Find it in **Localhost**, stop it, then press ▶ again. |
 | The list is empty | Press **↻ Refresh**. If it stays empty, no dev server is running yet. |
-| I closed the window and the app is still running | That's intended: it keeps watching from the menu bar. Click the menu bar icon → **Open Server Hub**, or **Quit Server Hub**. |
+| I closed the window and the app is still running | That's intended: it keeps watching from the menu bar. Click the menu bar icon → **Open RAM Rescue**, or **Quit RAM Rescue**. |
 
 ## Uninstall
 
-1. Click the Server Hub icon in the menu bar → **Quit Server Hub**.
-2. Drag **Server Hub** from Applications to the Trash.
+1. Click the RAM Rescue icon in the menu bar → **Quit RAM Rescue**.
+2. Drag **RAM Rescue** from Applications to the Trash.
 3. Optional: also remove its settings in `~/Library/Application Support/server-hub/`.
 
 ## Build from source
@@ -277,7 +280,7 @@ just like pressing Ctrl+C in a terminal. Server Hub refuses to stop macOS system
 You need macOS, [Node.js](https://nodejs.org) 20+ and [Rust](https://rustup.rs).
 
 ```bash
-git clone https://github.com/nvminhtu/server-hub && cd server-hub
+git clone https://github.com/nvminhtu/ram-rescue && cd ram-rescue
 npm ci
 npm test                 # core tests (Rust)
 npm run app              # run the app in dev mode
@@ -298,7 +301,7 @@ build, sign, notarize and publish the release. The GitHub Actions workflow only 
 
 ## Feedback
 
-Found a bug or want a feature? [Open an issue](https://github.com/nvminhtu/server-hub/issues). Include your macOS version
+Found a bug or want a feature? [Open an issue](https://github.com/nvminhtu/ram-rescue/issues). Include your macOS version
 and, if you can, a screenshot.
 
 ## License

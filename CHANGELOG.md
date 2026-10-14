@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — RAM Rescue
+
+- **New name: RAM Rescue** (was Server Hub). The app is now first of all a memory rescuer; settings carry over.
+- **Memory tab first.** Opens on it by default.
+- **Heavy apps are big cards** (500 MB and up): RAM in large type, % of your RAM, a big red **Quit**, Force Quit in the ⌄
+  menu, and **Free X GB** to quit every heavy app at once (asks first).
+- **Stop / Quit buttons you can see.** Every row in Memory, Localhost and Projects has a labelled red Stop/Quit button, no
+  hovering needed. Stop still asks a second click ("Stop?").
+- **iOS Simulator is one row.** Its 150+ background daemons (routined, pasted, photoanalysisd…) count as one app.
+
 ## 0.3.0
 
 - **Memory tab.** Every app and background process by RAM, apps grouped with their helpers (`Google Chrome · 45`),

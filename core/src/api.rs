@@ -463,7 +463,7 @@ impl App {
                     "args": scan::short(&l.args),
                     "mb": p.map(|p| p.rss_kb / 1024).unwrap_or(0),
                     "secs": p.map(|p| p.secs).unwrap_or(0),
-                    "source": if row.is_some_and(|r| r["own"] == true) { "Server Hub".to_string() } else { procs::source(l.pid, &table) },
+                    "source": if row.is_some_and(|r| r["own"] == true) { "RAM Rescue".to_string() } else { procs::source(l.pid, &table) },
                     "health": h.map(|h| h.state).unwrap_or("unhealthy"),
                     "code": h.and_then(|h| h.code),
                     "ms": h.map(|h| h.ms),
@@ -639,7 +639,7 @@ fn match_rows(entries: &[Entry], listeners: &[Listener], table: &HashMap<i32, Pr
                 "pid": pid,
                 "mb": proc_.map(|p| p.rss_kb / 1024),
                 "secs": if own_alive { run.map(|r| r.started.elapsed().as_secs()) } else { proc_.map(|p| p.secs) },
-                "source": if own_alive { "Server Hub".to_string() } else { pid.map(|p| procs::source(p, table)).unwrap_or_default() },
+                "source": if own_alive { "RAM Rescue".to_string() } else { pid.map(|p| procs::source(p, table)).unwrap_or_default() },
                 "sharedPort": shared,
                 "file": scan::short(&e.file),
             })

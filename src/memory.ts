@@ -107,14 +107,34 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
     return `<div role="row" class="row mrow ${filter === 'orphans' ? 'orph-grid' : 'mem-grid'} ${sel ? 'sel' : ''} ${g.system ? 'sys' : ''}" data-mrow="${esc(g.id)}" title="${g.system ? 'Part of macOS — not quittable' : esc(g.pids.length > 1 ? `${g.pids.length} processes` : `pid ${g.pids[0]}`)}">${box}<span class="mic">${icon}</span><span class="nm">${esc(g.name)}</span>${mid}<span class="mup">${fmtUp(g.secs)}</span>${acts}</div>`;
   }
 
+  // Heavy apps get a big card: the number you care about (RAM) large, and a Quit you can't miss.
+  function card(g: MemGroup) {
+    const total = data ? data.total / 2 ** 20 : 1;
+    const level = g.mb >= 1024 ? 'red' : 'amber';
+    const icon = g.kind === 'Dev' || g.orphan ? termIcon : appIcon(g.name);
+    const sub = [g.count > 1 ? `${g.count} processes` : g.kind, `CPU ${Math.round(g.cpu)}%`, `up ${fmtUp(g.secs)}`].join(' · ');
+    return `<div class="hcard ${level} ${selected === g.id ? 'sel' : ''}" data-mrow="${esc(g.id)}">
+      <span class="hic">${icon}</span>
+      <span class="hmain"><b>${esc(g.name)}</b><span>${esc(sub)}</span></span>
+      <span class="hmem"><b>${fmtMem(g.mb)}</b><span>${Math.max(1, Math.round((g.mb / total) * 100))}% of RAM</span></span>
+      <span class="hbtns"><button class="bigquit" data-mquit="${esc(g.id)}">Quit</button><span class="menu-wrap"><button class="bigchev" data-mmenu="${esc(g.id)}" aria-label="More">⌄</button>${menuFor === g.id ? `<div class="popover"><button class="danger" data-mforce="${esc(g.id)}">Force Quit</button></div>` : ''}</span></span>
+    </div>`;
+  }
+
   function render() {
     const host = el();
     if (!data) {
       host.innerHTML = '<div class="empty">Reading memory…</div>';
       return;
     }
-    const rows = list();
+    const all0 = list();
+    const heavy = filter === 'high' || filter === 'all' ? all0.filter((g) => !g.system && g.mb >= HIGH) : [];
+    const rows = all0.filter((g) => !heavy.includes(g));
     const max = Math.max(1, ...rows.map((g) => g.mb));
+    const heavyMb = heavy.reduce((a, g) => a + g.mb, 0);
+    const hero = heavy.length
+      ? `<div class="hero-h"><b>Heavy</b><span class="faint">${heavy.length} app${heavy.length > 1 ? 's' : ''} · ${fmtMem(heavyMb)}</span><span class="grow"></span>${heavy.length > 1 ? `<button class="bigquit ghost" data-mheavyall>Free ${fmtMem(heavyMb)}</button>` : ''}</div><div class="hgrid">${heavy.map(card).join('')}</div>`
+      : '';
     const quittable = rows.filter((g) => !g.system);
     const all = quittable.length > 0 && quittable.every((g) => checked.has(g.id));
     const head = filter === 'orphans'
@@ -122,12 +142,13 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
       : `<span><input type="checkbox" data-mall ${all ? 'checked' : ''} aria-label="Select all"></span><span></span><span>Name</span><span class="kind">Kind</span><span>Mem</span><span class="cpu">CPU</span><span class="mup">Up</span><span></span>`;
     const body = rows.length
       ? rows.map((g) => row(g, max)).join('')
-      : `<div class="empty">${filter === 'orphans' ? 'No orphans. Your Mac is tidy.' : 'Nothing here.'}</div>`;
+      : heavy.length ? '' : `<div class="empty">${filter === 'orphans' ? 'No orphans. Your Mac is tidy.' : 'Nothing here.'}</div>`;
+    const table = rows.length || !heavy.length ? `<div class="table-head ${filter === 'orphans' ? 'orph-grid' : 'mem-grid'}" role="row">${head}</div>${body}` : '';
     const picked = [...checked].map(byId).filter((g): g is MemGroup => !!g);
     const bar = picked.length
       ? `<div class="mbarbot"><span class="faint">${picked.length} ${filter === 'orphans' ? (picked.length > 1 ? 'orphans' : 'orphan') : 'selected'} · ${fmtMem(picked.reduce((a, g) => a + g.mb, 0))}</span><span class="grow"></span><button class="primary" data-mquitsel>${filter === 'orphans' ? 'Quit all' : `Quit ${picked.length}`}</button></div>`
       : '';
-    host.innerHTML = `<div class="mem">${summary()}${filters()}<div class="table-head ${filter === 'orphans' ? 'orph-grid' : 'mem-grid'}" role="row">${head}</div>${body}${bar}</div>`;
+    host.innerHTML = `<div class="memtab">${summary()}${filters()}${hero}${table}${bar}</div>`;
     renderConfirm();
   }
 
@@ -175,7 +196,7 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
   document.addEventListener('click', (ev) => {
     if (!d.active()) return;
     const t = ev.target as HTMLElement;
-    const hit = t.closest<HTMLElement>('[data-mfilter],[data-msys],[data-mcheck],[data-mall],[data-mquit],[data-mmenu],[data-mforce],[data-mquitsel],[data-mcancel],[data-mdo],[data-mrow],#memPop');
+    const hit = t.closest<HTMLElement>('[data-mfilter],[data-msys],[data-mcheck],[data-mall],[data-mquit],[data-mmenu],[data-mforce],[data-mquitsel],[data-mheavyall],[data-mcancel],[data-mdo],[data-mrow],#memPop');
     if (!hit) {
       if (confirm || menuFor) { confirm = null; menuFor = null; render(); }
       return;
@@ -191,6 +212,7 @@ export function createMemory(el: () => HTMLElement, d: MemDeps) {
     else if (ds.mmenu) { selected = ds.mmenu; menuFor = menuFor === ds.mmenu ? null : ds.mmenu; confirm = null; }
     else if (ds.mforce) { return void quit([ds.mforce], true); }
     else if (ds.mquitsel != null) { confirm = { ids: [...checked], anchor: '[data-mquitsel]' }; }
+    else if (ds.mheavyall != null) { confirm = { ids: list().filter((g) => !g.system && g.mb >= HIGH).map((g) => g.id), anchor: '[data-mheavyall]' }; }
     else if (ds.mcancel != null) { confirm = null; }
     else if (ds.mdo) { return void quit(confirm?.ids ?? [], ds.mdo === 'force'); }
     else if (ds.mrow) { selected = selected === ds.mrow ? selected : ds.mrow; menuFor = null; confirm = null; }

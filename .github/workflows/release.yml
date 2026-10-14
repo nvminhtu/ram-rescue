@@ -67,8 +67,8 @@ jobs:
       - if: steps.v.outputs.skip != 'true'
         name: Package
         run: |
-          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg Server-Hub-mac.dmg
-          shasum -a 256 Server-Hub-mac.dmg > SHA256SUMS.txt
+          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg RAM-Rescue-mac.dmg
+          shasum -a 256 RAM-Rescue-mac.dmg > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - if: steps.v.outputs.skip != 'true'
         name: Publish release
@@ -79,7 +79,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"; fi
           NOTES=$(awk -v t="## ${TAG#v}" '$0 ~ "^## " {p = ($0 == t)} p && !/^## /' CHANGELOG.md)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" Server-Hub-mac.dmg SHA256SUMS.txt --clobber
+            gh release upload "$TAG" RAM-Rescue-mac.dmg SHA256SUMS.txt --clobber
           else
-            gh release create "$TAG" --target "$GITHUB_SHA" Server-Hub-mac.dmg SHA256SUMS.txt --title "Server Hub ${TAG#v}" --notes "${NOTES:-Server Hub $TAG}"
+            gh release create "$TAG" --target "$GITHUB_SHA" RAM-Rescue-mac.dmg SHA256SUMS.txt --title "RAM Rescue ${TAG#v}" --notes "${NOTES:-RAM Rescue $TAG}"
           fi
