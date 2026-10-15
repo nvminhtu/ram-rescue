@@ -166,7 +166,7 @@ menu bar, even with the window closed. Switch it on or off with **Guard** at the
 ![Pro sheet: $9.99 once, no subscription, 2 Macs, 14-day trial, license key field](docs/pro.jpg)
 
 **Price:** $9.99 once, no subscription, a key works on 2 Macs. **14-day free trial** from the first launch of 0.5.0 —
-when it ends, Guard turns off and everything else keeps working. Bought a key? **Guard → License…**, paste it,
+when it ends, Guard turns off and everything else keeps working. Buy it from **Guard → License… → Buy Pro** or [here](https://icecraft.lemonsqueezy.com/checkout/buy/54ffb226-9b3c-42bf-9860-4e0eb794f50f). Bought a key? **Guard → License…**, paste it,
 **Activate**. Moving to a new Mac: **Deactivate this Mac** on the old one first. The trial date and the key are kept in
 your login Keychain; checking a key talks to Lemon Squeezy (the store), nothing else leaves your Mac.
 

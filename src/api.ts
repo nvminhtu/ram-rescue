@@ -2,8 +2,8 @@
 // Inside the app: the Tauri `api` command. In a browser (npm run dev + npm run bridge): the HTTP bridge on :4410.
 import { invoke } from '@tauri-apps/api/core';
 
-// Lemon Squeezy checkout — fill in when the product exists
-export const BUY_URL = '';
+// Lemon Squeezy checkout (RAM Rescue Pro, $9.99, license key for 2 Macs)
+export const BUY_URL = 'https://icecraft.lemonsqueezy.com/checkout/buy/54ffb226-9b3c-42bf-9860-4e0eb794f50f';
 
 export const isTauri = '__TAURI_INTERNALS__' in window;
 const BRIDGE = 'http://127.0.0.1:4410/api/';

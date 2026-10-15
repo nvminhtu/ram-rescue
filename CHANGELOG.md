@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- **Buy Pro** is live: Guard → License… → **Buy Pro** opens the checkout ($9.99 once, a key for 2 Macs). Paste the key
+  from your receipt email and press **Activate**.
+
 ## 0.6.0 — Clean, History, Meeting mode
 
 - **Clean (free).** A new tab lists caches that apps rebuild by themselves — Xcode build files and iOS device support,
